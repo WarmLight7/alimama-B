@@ -107,7 +107,7 @@ services:
       - "./node-testbench:/work"
       - "./data:/data:ro"
     working_dir: /work
-    command: ["bash", "./run.sh", "node-3"]
+    command: ["bash", "./run.sh"]
 
 networks:
   alimama:
