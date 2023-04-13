@@ -21,10 +21,10 @@ cp build node-1 -rp
 cp build node-2 -rp
 cp build node-3 -rp
 docker compose -f docker-compose-run.yml down
-docker compose -f docker-compose-run.yml up
+docker compose -f docker-compose-run.yml up -d
 
 echo "4-Tail Log"
-tail -f node-testbench/logs/test.log
+tail -F node-testbench/logs/test.log
 
 
 
