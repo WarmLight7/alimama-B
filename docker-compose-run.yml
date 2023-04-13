@@ -1,0 +1,117 @@
+version: '2'
+
+services:
+  etcd:
+    container_name: etcd
+    image: docker.io/bitnami/etcd:3.5
+    networks:
+      - alimama
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+
+  node-1:
+    image: alimama-2023-engine
+    container_name: node-1
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G 
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    networks:
+      - alimama
+    volumes:
+      - "./node-1:/work"
+      - "./data:/data:ro"
+    environment:
+      - NODE_ID=1
+      - MEMORY=16G
+      - CPU=2C
+    depends_on:
+      - etcd
+    working_dir: /work
+    command: ["bash", "./run.sh", "node-1"]
+
+
+  node-2:
+    image: alimama-2023-engine
+    container_name: node-2
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G 
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    networks:
+      - alimama
+    volumes:
+      - "./node-2:/work"
+      - "./data:/data:ro"
+    environment:
+      - NODE_ID=2
+      - MEMORY=16G
+      - CPU=2C
+    depends_on:
+      - etcd
+    working_dir: /work
+    command: ["bash", "./run.sh", "node-2"]
+
+  node-3:
+    image: alimama-2023-engine
+    container_name: node-3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G 
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    networks:
+      - alimama
+    volumes:
+      - "./node-3:/work"
+      - "./data:/data:ro"
+    environment:
+      - NODE_ID=3
+      - MEMORY=16G
+      - CPU=2C
+    depends_on:
+      - etcd
+    working_dir: /work
+    command: ["bash", "./run.sh", "node-3"]
+
+  testbench:
+    image: alimama-2023-engine
+    container_name: node-testbench
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G 
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    networks:
+      - alimama
+    depends_on:
+      - etcd
+      - node-1
+      - node-2
+      - node-3
+    volumes:
+      - "./node-testbench:/work"
+      - "./data:/data:ro"
+    working_dir: /work
+    command: ["bash", "./run.sh", "node-3"]
+
+networks:
+  alimama:
+    name: alimama
+    internal: true
+    external: false
+
