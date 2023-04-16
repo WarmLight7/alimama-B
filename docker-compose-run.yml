@@ -108,7 +108,7 @@ services:
       - node-2
       - node-3
     links:
-      - docker-proxy #可以通过 http 和 grpc 获取各个节点的 cpu 和内存，start 和 stop 节点
+      - docker-proxy #可以通过 http 和 grpc 获取各个节点的 cpu 和内存，start 和 stop 节点，接口未实现；可以先看 cpu 和内存的日志
     volumes:
       - "./node-testbench:/work"
       - "./data:/data:ro"
