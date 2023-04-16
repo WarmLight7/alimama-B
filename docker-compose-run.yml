@@ -1,3 +1,4 @@
+
 version: '2'
 
 services:
@@ -10,8 +11,9 @@ services:
       - ALLOW_NONE_AUTHENTICATION=yes
 
   node-1:
-    image: alimama-2023-engine
     container_name: node-1
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
+    cpuset: "1"
     deploy:
       resources:
         limits:
@@ -36,8 +38,9 @@ services:
 
 
   node-2:
-    image: alimama-2023-engine
     container_name: node-2
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
+    cpuset: "2"
     deploy:
       resources:
         limits:
@@ -61,8 +64,9 @@ services:
     command: ["bash", "./run.sh", "node-2"]
 
   node-3:
-    image: alimama-2023-engine
     container_name: node-3
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
+    cpuset: "3"
     deploy:
       resources:
         limits:
@@ -86,8 +90,34 @@ services:
     command: ["bash", "./run.sh", "node-3"]
 
   testbench:
-    image: alimama-2023-engine
     container_name: node-testbench
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G 
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    networks:
+      - alimama
+    depends_on:
+      - etcd
+      - node-1
+      - node-2
+      - node-3
+    links:
+      - docker-proxy #可以通过 http 和 grpc 获取各个节点的 cpu 和内存，start 和 stop 节点
+    volumes:
+      - "./node-testbench:/work"
+      - "./data:/data:ro"
+      - "./docker-proxy/logs:/logs/docker-proxy"
+    working_dir: /work
+    command: ["bash", "./run.sh"]
+  docker-proxy:
+    container_name: docker-proxy
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
     deploy:
       resources:
         limits:
@@ -104,10 +134,11 @@ services:
       - node-2
       - node-3
     volumes:
-      - "./node-testbench:/work"
-      - "./data:/data:ro"
+      - "./docker-proxy:/work"
+      - "/var/run/docker.sock:/var/run/docker.sock"
     working_dir: /work
-    command: ["bash", "./run.sh"]
+    command: ["./docker-proxy", "-containers", "node-1,node-2,node-3"]
+
 
 networks:
   alimama:

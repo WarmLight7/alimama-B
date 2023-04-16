@@ -1,7 +1,7 @@
 
 
 mkdir -p logs/
-for i in {1..100}
+while true
 do
 	echo node_1 `etcdctl --endpoints http://etcd:2379 get node_1`  >> logs/test.log
 	echo node_2 `etcdctl --endpoints http://etcd:2379 get node_2`  >> logs/test.log

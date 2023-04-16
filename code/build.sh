@@ -1,1 +1,2 @@
-echo "build" >> logs/build.log
+#go build
+
