@@ -17,7 +17,8 @@ cd `dirname $0`
 mkdir build
 tar -xzf code.tar.gz --director=build
 #考生相关: build.sh是构建入口脚本, run.sh是运行入口脚本
-docker run --rm  -v "./build:/work" -w /work --network none alimama-2023-engine bash build.sh
+docker run --rm  -v "./build:/work" -w /work --network none public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0 bash build.sh
+docker run --rm  -v "./build:/work" -w /work --network none public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0 bash build.sh
 
 echo "3-Run"
 cd `dirname $0`
@@ -29,7 +30,3 @@ docker compose -f docker-compose-run.yml up -d
 
 echo "4-Tail Log"
 tail -F node-testbench/logs/test.log
-
-
-
-

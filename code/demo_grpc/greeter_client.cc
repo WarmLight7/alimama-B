@@ -1,107 +1,132 @@
-/*
- *
- * Copyright 2015 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
-
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
+#include <thread>
+#include <chrono>
 
+#include <boost/lockfree/queue.hpp>
 #include <grpcpp/grpcpp.h>
-
-#ifdef BAZEL_BUILD
-#include "examples/protos/helloworld.grpc.pb.h"
-#else
 #include "helloworld.grpc.pb.h"
-#endif
+#include <etcd/Client.hpp>
 
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using helloworld::HelloRequest;
-using helloworld::HelloReply;
-using helloworld::Greeter;
 
-class GreeterClient {
+using alimama::proto::Request;
+using alimama::proto::Response;
+using alimama::proto::SearchService;
+
+class SearchClient {
  public:
-  GreeterClient(std::shared_ptr<Channel> channel)
-      : stub_(Greeter::NewStub(channel)) {}
+  SearchClient(std::shared_ptr<Channel> channel) : stub_(SearchService::NewStub(channel)) {}
 
-  // Assembles the client's payload, sends it and presents the response back
-  // from the server.
-  std::string SayHello(const std::string& user) {
-    // Data we are sending to the server.
-    HelloRequest request;
-    request.set_name(user);
+  void Search(const std::vector<uint64_t>& keywords, const std::vector<float>& context_vector, uint64_t hour, uint64_t topn) {
+    Request request;
 
-    // Container for the data we expect from the server.
-    HelloReply reply;
+    for (auto keyword : keywords) {
+      request.add_keywords(keyword);
+    }
 
-    // Context for the client. It could be used to convey extra information to
-    // the server and/or tweak certain RPC behaviors.
+    for (auto value : context_vector) {
+      request.add_context_vector(value);
+    }
+
+    request.set_hour(hour);
+    request.set_topn(topn);
+
+    Response response;
     ClientContext context;
 
-    // The actual RPC.
-    Status status = stub_->SayHello(&context, request, &reply);
+    Status status = stub_->Search(&context, request, &response);
 
-    // Act upon its status.
     if (status.ok()) {
-      return reply.message();
+      for (int i = 0; i < response.adgroup_ids_size(); i++) {
+        // std::cout << "Adgroup ID: " << response.adgroup_ids(i) << ", Price: " << response.prices(i) << std::endl;
+      }
     } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
-      return "RPC failed";
+      std::cout << "RPC failed" << std::endl;
     }
   }
 
  private:
-  std::unique_ptr<Greeter::Stub> stub_;
+  std::unique_ptr<SearchService::Stub> stub_;
 };
 
 int main(int argc, char** argv) {
-  // Instantiate the client. It requires a channel, out of which the actual RPCs
-  // are created. This channel models a connection to an endpoint specified by
-  // the argument "--target=" which is the only expected argument.
-  // We indicate that the channel isn't authenticated (use of
-  // InsecureChannelCredentials()).
-  std::string target_str;
-  std::string arg_str("--target");
-  if (argc > 1) {
-    std::string arg_val = argv[1];
-    size_t start_pos = arg_val.find(arg_str);
-    if (start_pos != std::string::npos) {
-      start_pos += arg_str.size();
-      if (arg_val[start_pos] == '=') {
-        target_str = arg_val.substr(start_pos + 1);
-      } else {
-        std::cout << "The only correct argument syntax is --target=" << std::endl;
-        return 0;
-      }
-    } else {
-      std::cout << "The only acceptable argument is --target=" << std::endl;
-      return 0;
-    }
+    // 创建一个etcd客户端
+  etcd::Client etcd("http://etcd:2379");
+
+  // 从etcd中获取服务地址
+  auto response =  etcd.get("/services/searchservice").get();
+  if (response.is_ok()) {
+      std::cout << "Service connected successful.\n";
   } else {
-    target_str = "localhost:50051";
+      std::cerr << "Service connected failed: " << response.error_message() << "\n";
+      return -1;
   }
-  GreeterClient greeter(grpc::CreateChannel(
-      target_str, grpc::InsecureChannelCredentials()));
-  std::string user("world");
-  std::string reply = greeter.SayHello(user);
-  std::cout << "Greeter received: " << reply << std::endl;
+  std::string server_address = response.value().as_string();
+  std::cout << "server_address " << server_address << std::endl;
+  SearchClient client(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials()));
+
+  std::vector<uint64_t> keywords = {1, 2, 3};
+  std::vector<float> context_vector = {0.1f, 0.2f};
+  uint64_t hour = 12;
+  uint64_t topn = 10;
+
+ // 创建多个线程并发发送search请求
+  const int kNumThreads = 40;
+  std::vector<std::thread> threads(kNumThreads);
+  boost::lockfree::queue<double> latencies(1000);
+  std::atomic<int> completed_requests{0};
+  auto start_time = std::chrono::steady_clock::now();
+  for (int i = 0; i < kNumThreads; ++i) {
+    threads[i] = std::thread([&]() {
+      while (true) {
+        auto start = std::chrono::steady_clock::now();
+        client.Search(keywords, context_vector, hour, topn);
+        auto end = std::chrono::steady_clock::now();
+        auto latency = std::chrono::duration<double, std::milli>(end - start).count();
+        latencies.push(latency);
+        completed_requests++;
+      }
+    });
+  }
+
+  // 每隔1秒钟统计一次QPS和平均延迟
+  int num_requests = 0;
+  double total_latency = 0;
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    auto end_time = std::chrono::steady_clock::now();
+    auto elapsed_time = std::chrono::duration<double>(end_time - start_time).count();
+    int num_completed_requests = completed_requests.load();
+    double qps = num_completed_requests / elapsed_time;
+    double avg_latency = 0;
+    if (!latencies.empty()) {
+      double latency = 0;
+      for (size_t i=0;i<100; i++) {
+        bool sucess = latencies.pop(latency);
+        if (!sucess) {
+          break;
+        }
+        total_latency += latency;
+        num_requests++;
+      }
+      avg_latency = total_latency / num_requests;
+      while(latencies.pop(latency)) {}
+      total_latency = 0;
+      num_requests = 0;
+    }
+    std::cout << "QPS: " << qps << ", Average Latency: " << avg_latency << " ms\n";
+  }
+
+  // 等待所有线程结束
+  for (int i = 0; i < kNumThreads; ++i) {
+    threads[i].join();
+  }
+
 
   return 0;
 }

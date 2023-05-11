@@ -3,15 +3,15 @@ version: '2'
 
 services:
   etcd:
-    container_name: etcd
+    container_name: ${PREFIX}_etcd
     image: docker.io/bitnami/etcd:3.5
     networks:
       - alimama
     environment:
       - ALLOW_NONE_AUTHENTICATION=yes
 
-  node-1:
-    container_name: node-1
+  node1:
+    container_name: ${PREFIX}_node-1
     image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
     cpuset: "1"
     deploy:
@@ -31,14 +31,15 @@ services:
       - NODE_ID=1
       - MEMORY=16G
       - CPU=2C
+      - SERVICE_NAME=node1
+
     depends_on:
       - etcd
-    working_dir: /work
+    working_dir: /work/build
     command: ["bash", "./run.sh", "node-1"]
 
-
-  node-2:
-    container_name: node-2
+  node2:
+    container_name: ${PREFIX}_node-2
     image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
     cpuset: "2"
     deploy:
@@ -58,13 +59,14 @@ services:
       - NODE_ID=2
       - MEMORY=16G
       - CPU=2C
+      - SERVICE_NAME=node2
     depends_on:
       - etcd
-    working_dir: /work
+    working_dir: /work/build
     command: ["bash", "./run.sh", "node-2"]
 
-  node-3:
-    container_name: node-3
+  node3:
+    container_name: ${PREFIX}_node-3
     image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
     cpuset: "3"
     deploy:
@@ -84,29 +86,30 @@ services:
       - NODE_ID=3
       - MEMORY=16G
       - CPU=2C
+      - SERVICE_NAME=node3
     depends_on:
       - etcd
-    working_dir: /work
+    working_dir: /work/build
     command: ["bash", "./run.sh", "node-3"]
 
   testbench:
-    container_name: node-testbench
+    container_name: ${PREFIX}_node-testbench
     image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: '2.0'
           memory: 2G 
         reservations:
-          cpus: '1.0'
+          cpus: '2.0'
           memory: 2G
     networks:
       - alimama
     depends_on:
       - etcd
-      - node-1
-      - node-2
-      - node-3
+      - node1
+      - node2
+      - node3
     links:
       - docker-proxy #可以通过 http 和 grpc 获取各个节点的 cpu 和内存，start 和 stop 节点，接口未实现；可以先看 cpu 和内存的日志
     volumes:
@@ -115,8 +118,9 @@ services:
       - "./docker-proxy/logs:/logs/docker-proxy"
     working_dir: /work
     command: ["bash", "./run.sh"]
+
   docker-proxy:
-    container_name: docker-proxy
+    container_name: ${PREFIX}_docker-proxy
     image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
     deploy:
       resources:
@@ -130,9 +134,9 @@ services:
       - alimama
     depends_on:
       - etcd
-      - node-1
-      - node-2
-      - node-3
+      - node1
+      - node2
+      - node3
     volumes:
       - "./docker-proxy:/work"
       - "/var/run/docker.sock:/var/run/docker.sock"
@@ -142,7 +146,7 @@ services:
 
 networks:
   alimama:
-    name: alimama
+    name: ${PREFIX}_alimama
     internal: true
     external: false
 

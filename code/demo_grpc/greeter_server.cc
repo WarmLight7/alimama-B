@@ -19,10 +19,12 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <cstdlib>
 
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
+#include <etcd/Client.hpp>
 
 #ifdef BAZEL_BUILD
 #include "examples/protos/helloworld.grpc.pb.h"
@@ -34,39 +36,59 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using helloworld::HelloRequest;
-using helloworld::HelloReply;
-using helloworld::Greeter;
+using grpc::ServerCompletionQueue;
 
-// Logic and data behind the server's behavior.
-class GreeterServiceImpl final : public Greeter::Service {
-  Status SayHello(ServerContext* context, const HelloRequest* request,
-                  HelloReply* reply) override {
-    std::string prefix("Hello ");
-    reply->set_message(prefix + request->name());
+using alimama::proto::Request;
+using alimama::proto::Response;
+using alimama::proto::SearchService;
+class SearchServiceImpl final : public SearchService::Service {
+  Status Search(ServerContext* context, const Request* request, Response* response) override {
+    // 在这里实现您的广告匹配逻辑。
+    // 作为示例，我们只是简单地返回一些假数据。
+
+    // 假设我们找到了两个广告单元
+    response->add_adgroup_ids(12345);
+    response->add_adgroup_ids(67890);
+
+    // 对应的价格
+    response->add_prices(100);
+    response->add_prices(200);
+
     return Status::OK;
   }
 };
 
 void RunServer() {
-  std::string server_address("0.0.0.0:50051");
-  GreeterServiceImpl service;
+    const char* env_var = std::getenv("SERVICE_NAME");
+    std::string env_var_str = std::string("127.0.0.1");
+    if (env_var != nullptr) {
+      env_var_str = std::string(env_var);
+    } else {
+      std::cout << "service " << env_var << std::endl;
+    }
+    std::string server_address = env_var_str + std::string(":50051");
+    SearchServiceImpl service;
 
-  grpc::EnableDefaultHealthCheckService(true);
-  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
-  ServerBuilder builder;
-  // Listen on the given address without any authentication mechanism.
-  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-  // Register "service" as the instance through which we'll communicate with
-  // clients. In this case it corresponds to an *synchronous* service.
-  builder.RegisterService(&service);
-  // Finally assemble the server.
-  std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+    ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(&service);
 
-  // Wait for the server to shutdown. Note that some other thread must be
-  // responsible for shutting down the server for this call to ever return.
-  server->Wait();
+    std::unique_ptr<Server> server(builder.BuildAndStart());
+
+      // 创建一个etcd客户端
+    etcd::Client etcd("http://etcd:2379");
+
+    // 将服务地址注册到etcd中
+    auto response = etcd.set("/services/searchservice", server_address).get();
+    if (response.is_ok()) {
+        std::cout << "Service registration successful.\n";
+    } else {
+        std::cerr << "Service registration failed: " << response.error_message() << "\n";
+    }
+
+    std::cout << "Server listening on " << server_address  << std::endl;
+
+    server->Wait();
 }
 
 int main(int argc, char** argv) {

@@ -1,0 +1,8 @@
+{
+    "name": "alimama",
+    "image": "public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0",
+    "settings": { 
+        "terminal.integrated.shell.linux": "/bin/bash"
+    },
+    "extensions": ["ms-vscode.cpptools"]
+}
