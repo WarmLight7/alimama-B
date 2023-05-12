@@ -5,6 +5,8 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
+#include <unordered_map>
+
 #include <cmath>
 
 #include <boost/lockfree/queue.hpp>
@@ -12,6 +14,8 @@
 #include "helloworld.grpc.pb.h"
 #include <etcd/Client.hpp>
 #include "grpc_benchmark.h"
+#include "test_case_reader,h"
+#include "config.h"
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -20,6 +24,8 @@ using grpc::Status;
 using alimama::proto::Request;
 using alimama::proto::Response;
 using alimama::proto::SearchService;
+
+using TestCasesGenerator = std::function<Request()>;
 
 Request genreq() {
   std::vector<uint64_t> keywords = {1, 2, 3};
@@ -43,46 +49,85 @@ Request genreq() {
 
 using SearchServiceGprcBenchmark = GrpcBenchmark<Request, Response>;
 
-double CalcResultScore(std::unique_ptr<SearchService::Stub>& stub) {
-  SearchServiceGprcBenchmark::DoRequestFunc doreqeust = [&stub](ClientContext& ctx, Request& req, Response &resp) -> Status {
-    return stub->Search(&ctx, req, &resp);
-  };
-  SearchServiceGprcBenchmark bench(doreqeust, 20, 500, 500);
-  auto start = std::chrono::steady_clock::now();
-  for(size_t i=0; i<500; i++) {
-    bench.request(i, request);
-  }
-  bench.wait_all();
-  auto end = std::chrono::steady_clock::now();
-  auto elapsedtime_ms = std::chrono::duration<double, std::milli>(end - start).count();
-  auto summary = bench1.summary();
-  std::cout << "summary elapsedtime_ms " << elapsedtime_ms << std::endl;
+void dump_summary(const SearchServiceGprcBenchmark::SummaryType& summary, double qps) {
   std::cout << "summary completed_requests " << summary.completed_requests << std::endl;
-  std::cout << "summary QPS " << summary.success_request_count / (elapsedtime_ms / 1000) << std::endl;
   std::cout << "summary avg_latency_ms " << summary.avg_latency_ms << std::endl;
+  std::cout << "summary qps " << qps << std::endl;
   std::cout << "summary error_request_count " << summary.error_request_count << std::endl;
   std::cout << "summary success_request_count " << summary.success_request_count << std::endl;
   std::cout << "summary timeout_request_count " << summary.timeout_request_count << std::endl;
 }
 
-constexpr int32_t kMaxTryTimes = 10;
-constexpr double kQpsRollingStep = 0.1;
-double TestMaxQps(std::unique_ptr<SearchService::Stub>& stub, int64_t timeout_ms, double sucess_percent, std::function<Request()> genrequest) {
-  SearchServiceGprcBenchmark::DoRequestFunc doreqeust = [&stub](ClientContext& ctx, Request& req, Response &resp) -> Status {
-    return stub->Search(&ctx, req, &resp);
-  };
 
-  double max_qps = 500;
-  double last_qps = 0;
-  int64_t max_times = 5;
-  SearchServiceGprcBenchmark::SummaryType last_summary;
-  for (size_t i = 0; i<kMaxTryTimes; ++i) {
-    auto start = std::chrono::steady_clock::now();
-    SearchServiceGprcBenchmark bench(doreqeust, 20, timeout_ms, int32_t(max_qps));
-    for (size_t j = 0; j < max_qps*max_times; ++j) {
-      bench.request(j, genrequest());
+struct TestCaseResultItem{
+  uint64_t id;
+  int32_t ad_correct; // 0 错误, 1完全正确, 2 部份正确
+  int32_t price_correct; // 0 错误, 1完全正确
+};
+
+TestCaseResultItem compare_result(uint64_t id, const Response& resp, const Response& ref) {
+  return TestCaseResultItem{
+    id, 0, 0
+  };
+}
+
+struct TestResult{
+  std::vector<TestCaseResultItem> testResultScoreDetail;
+  double qpsBaseLine;
+  SearchServiceGprcBenchmark::SummaryType testResult;
+};
+
+void TestResultScore(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestCaseReader& reader,const TestResultConfig& config,
+    std::vector<TestCaseResultItem>& testResultScoreDetail, double& qpsBaseLine) {
+  SearchServiceGprcBenchmark bench(doreqeust, config.thread_num, config.timeout_ms, config.qps_limit);
+  auto start = std::chrono::steady_clock::now();
+  std::vector<Response> resps_ref(config.request_times);
+  for(size_t i=0; i<config.request_times; i++) {
+    TestCasePair pair{};
+    reader.pop(pair);
+    bench.request(i, pair.req);
+    resps_ref[i] = std::move(pair.response);
+  }
+  bench.wait_all();
+  auto end = std::chrono::steady_clock::now();
+  auto elapsedtime_ms = std::chrono::duration<double, std::milli>(end - start).count();
+  auto summary = bench.summary();
+
+  qpsBaseLine = summary.success_request_count / (elapsedtime_ms / 1000);
+  if (summary.success_request_count < config.sample_num) {
+    // error
+    return;
+  }
+  
+  for(const auto& item : summary.data) {
+    if (item.id >= config.request_times) {
+      // error
+      continue;
     }
-    bench.wait_all_until_timeout(max_times * 1000);
+    testResultScoreDetail.push_back(compare_result(item.id, item.response, resps_ref.at(item.id)));
+  }
+
+  dump_summary(summary, qpsBaseLine);
+}
+
+constexpr int32_t kDefaultQpsBaseline = 500;
+double TestMaxQps(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestCaseReader& reader, const TestMaxQpsConfig& cfg,
+    std::vector<TestCaseResultItem>& testResultScoreDetail) {
+  double max_qps = cfg.qps_baseline > 0 ? cfg.qps_baseline : kDefaultQpsBaseline;
+  double last_qps = 0;
+  int64_t request_times = max_qps * cfg.request_duration_each_iter_sec;
+
+  SearchServiceGprcBenchmark::SummaryType last_summary;
+  std::vector<Response> resps_ref(request_times);
+  for (size_t i = 0; i<cfg.max_iter_times; ++i) {
+    auto start = std::chrono::steady_clock::now();
+    SearchServiceGprcBenchmark bench(doreqeust, kThreadNum, cfg.timeout_ms, int32_t(max_qps));
+    for (size_t j = 0; j < request_times; ++j) {
+      TestCasePair pair{};
+      bench.request(i, pair.req);
+      resps_ref[i] = std::move(pair.response);
+    }
+    bench.wait_all_until_timeout(cfg.request_duration_each_iter_sec * 1000);
     auto end = std::chrono::steady_clock::now();
     auto elapsedtime_ms = std::chrono::duration<double, std::milli>(end - start).count();
     auto summary = bench.summary();
@@ -90,93 +135,113 @@ double TestMaxQps(std::unique_ptr<SearchService::Stub>& stub, int64_t timeout_ms
     last_qps = QPS;
     last_summary = summary;
 
-    if (summary.success_request_percent < sucess_percent) {
+    if (summary.success_request_percent < cfg.success_percent_th) {
       auto update_qps = std::min(max_qps, QPS);
       auto diff = std::abs(update_qps - max_qps) / max_qps;
-      if (diff < kQpsRollingStep) {
-        max_qps = max_qps - max_qps * kQpsRollingStep;
+      if (diff < cfg.qps_step_size_percent) {
+        max_qps = max_qps - max_qps * cfg.qps_step_size_percent;
       } else {
         max_qps = update_qps;
       }
     } else {
       auto update_qps = std::max(max_qps, QPS);
       auto diff = std::abs(update_qps - max_qps) / max_qps;
-      if (diff < kQpsRollingStep) {
-        max_qps = max_qps + max_qps * kQpsRollingStep;
+      if (diff < cfg.qps_step_size_percent) {
+        max_qps = max_qps + max_qps * cfg.qps_step_size_percent;
       } else {
         max_qps = update_qps;
       }
     }
-    std::cout << "summary QPS " << last_qps << std::endl;
-    std::cout << "summary completed_requests " << last_summary.completed_requests << std::endl;
-    std::cout << "summary avg_latency_ms " << last_summary.avg_latency_ms << std::endl;
-    std::cout << "summary error_request_count " << last_summary.error_request_count << std::endl;
-    std::cout << "summary success_request_count " << last_summary.success_request_count << std::endl;
-    std::cout << "summary timeout_request_count " << last_summary.timeout_request_count << std::endl;
+    dump_summary(last_summary, last_qps);
   }
 
-  std::cout << "summary QPS " << last_qps << std::endl;
-  std::cout << "summary completed_requests " << last_summary.completed_requests << std::endl;
-  std::cout << "summary avg_latency_ms " << last_summary.avg_latency_ms << std::endl;
-  std::cout << "summary error_request_count " << last_summary.error_request_count << std::endl;
-  std::cout << "summary success_request_count " << last_summary.success_request_count << std::endl;
-  std::cout << "summary timeout_request_count " << last_summary.timeout_request_count << std::endl;
-
+  for(const auto& item : last_summary.data) {
+      if (item.id >= request_times) {
+        // error
+        continue;
+      }
+      testResultScoreDetail.push_back(compare_result(item.id, item.response, resps_ref.at(item.id)));
+    }
+  dump_summary(last_summary, last_qps);
   return last_qps;
 }
 
-double CalcCapacityScore(std::unique_ptr<SearchService::Stub>& stub) {
-    SearchServiceGprcBenchmark::DoRequestFunc doreqeust = [&stub](ClientContext& ctx, Request& req, Response &resp) -> Status {
-      return stub->Search(&ctx, req, &resp);
-    };
-    SearchServiceGprcBenchmark bench1(doreqeust, 1000, 500, 500);
-    auto start = std::chrono::steady_clock::now();
-    for(size_t i=0; i<500; i++) {
-      bench1.request(i, genrequest());
+SearchServiceGprcBenchmark::SummaryType TestServiceStabilityScore(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestCaseReader& reader, const TestStabilityConfig& cfg,
+    std::vector<TestCaseResultItem>& test_result_detail) {
+  auto qps_limit = cfg.load_percent * cfg.max_qps;
+  SearchServiceGprcBenchmark bench(doreqeust, cfg.thread_num, cfg.timeout_ms, qps_limit);
+  
+  int32_t request_times = qps_limit * cfg.test_duration_sec;
+  auto start = std::chrono::steady_clock::now();
+  std::vector<Response> resps_ref(request_times);
+  for(size_t i=0; i<request_times; i++) {
+    TestCasePair pair{};
+    reader.pop(pair);
+    bench.request(i, pair.req);
+    resps_ref[i] = std::move(pair.response);
+  }
+  bench.wait_all_until_timeout(cfg.test_duration_sec * 1000);
+  auto end = std::chrono::steady_clock::now();
+  auto elapsedtime_ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+  auto summary = bench.summary();
+  for(const auto& item : summary.data) {
+    if (item.id >= request_times) {
+      // error
+      continue;
     }
-    bench1.wait_all();
-    auto end = std::chrono::steady_clock::now();
-    auto elapsedtime_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    auto summary = bench1.summary();
-    double QPS = summary.success_request_count / (elapsedtime_ms / 1000);
-    auto p99 = summary.p99_latency_ms;
+    test_result_detail.push_back(compare_result(item.id, item.response, resps_ref.at(item.id)));
+  }
+
+  return summary;
 }
 
-// double calcResponseTimeScore(std::unique_ptr<SearchService::Stub>& stub) {
-// }
-
-// double calcServiceScore(std::unique_ptr<SearchService::Stub>& stub) {
-// }
-
-int main(int argc, char** argv) {
-    // 创建一个etcd客户端
+std::unique_ptr<SearchService::Stub> setupSearchService() {
   etcd::Client etcd("http://etcd:2379");
-  // 从etcd中获取服务地址
   auto response =  etcd.get("/services/searchservice").get();
   if (response.is_ok()) {
       std::cout << "Service connected successful.\n";
   } else {
       std::cerr << "Service connected failed: " << response.error_message() << "\n";
-      return -1;
+      return std::unique_ptr<SearchService::Stub>{};
   }
   std::string server_address = response.value().as_string();
   std::cout << "server_address " << server_address << std::endl;
 
   std::unique_ptr<SearchService::Stub> stub(SearchService::NewStub(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials())));
+  return stub;
+}
+
+int main(int argc, char** argv) {
+  auto stub = setupSearchService();
   SearchServiceGprcBenchmark::DoRequestFunc doreqeust = [&stub](ClientContext& ctx, Request& req, Response &resp) -> Status {
     return stub->Search(&ctx, req, &resp);
   };
 
-  findMaxQps(stub, 100, 0.99, genreq);
+  auto reader = TestCaseReader("test_case.json", 100);
+  reader.start();
 
-  SearchServiceGprcBenchmark bench(doreqeust, 10, 100, 50000);
-  auto request = genreq();
+  TestResultConfig test_result_cfg {};
+  TestMaxQpsConfig test_max_qps_cfg {};
+  TestStabilityConfig test_stability_cfg {};
+  read_config_from_file("config.json", test_result_cfg, test_max_qps_cfg, test_stability_cfg);
 
 
-  // double ResultScore = calcResultScore(stub);
-  // double CapacityScore = calcCapacityScore(stub);
-  // double ResponseTimeScore = calcResponseTimeScore(stub);
-  // double ServiceScore = calcServiceScore(stub);
+  TestResult test_result {};
+  std::vector<TestCaseResultItem> test_result_score_detail {};
+  double qps_baseline {};
+  TestResultScore(doreqeust, reader, test_result_cfg, test_result_score_detail, qps_baseline);
+  std::cout << "qps_baseline " << qps_baseline << std::endl;
+
+  std::vector<TestCaseResultItem> test_max_qps_detail {};
+  test_max_qps_cfg.qps_baseline = qps_baseline;
+  double max_qps = TestMaxQps(doreqeust, reader, test_max_qps_cfg, test_max_qps_detail);
+  std::cout << "max_qps " << max_qps << std::endl;
+
+  std::vector<TestCaseResultItem> test_service_stability_detail {};
+  test_stability_cfg.max_qps = max_qps;
+  auto test_stability_result = TestServiceStabilityScore(doreqeust, reader, test_stability_cfg, test_service_stability_detail);
+  std::cout << "max_qps " << max_qps << std::endl;
 
   return 0;
 }

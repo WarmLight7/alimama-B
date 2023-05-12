@@ -65,6 +65,8 @@
         "typeinfo": "cpp",
         "variant": "cpp",
         "csignal": "cpp",
-        "iomanip": "cpp"
+        "iomanip": "cpp",
+        "test_case_reader,h": "cpp",
+        "fstream": "cpp"
     }
 }

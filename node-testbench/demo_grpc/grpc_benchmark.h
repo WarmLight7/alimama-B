@@ -58,10 +58,10 @@ private:
 public:
     using DoRequestFunc = std::function<Status(ClientContext&, T_Req&, T_Resp&)>;
     using SummaryType = Summary<T_Resp>;
-    GrpcBenchmark(DoRequestFunc do_request, int32_t threads_num=1, int64_t deadline_ms=10, int32_t qps=1000):
+    GrpcBenchmark(DoRequestFunc do_request, int32_t threads_num=1, int64_t deadline_ms=10, int32_t qps_limit=1000):
         threads(threads_num), enable(true), pending_num{0}, deadline_ms{deadline_ms} {
-        auto max_timesleep_ms = 1 * 1000/(qps * 1.0 / threads_num);
-        std::cout << " threads_num " << threads_num << " deadline_ms " << deadline_ms << " qps " << qps << std::endl;
+        auto max_timesleep_ms = 1 * 1000/(qps_limit * 1.0 / threads_num);
+        std::cout << " threads_num " << threads_num << " deadline_ms " << deadline_ms << " qps_limit " << qps_limit << std::endl;
 
         for (size_t i = 0; i < this->threads.size(); ++i) {
             threads[i] = std::thread([&]() {
