@@ -37,4 +37,5 @@ private:
     std::queue<T> q_;
     mutable boost::mutex mutex_;
     boost::condition_variable cv_;
+    int32_t capacity_;
 };
