@@ -22,6 +22,7 @@ CXXFLAGS += -std=c++17
 ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
+		   -lboost_log\
            -lgrpc++_reflection\
            -ldl
 else
@@ -29,6 +30,9 @@ LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
 		   -letcd-cpp-api\
 		   -lcpprest\
+		   -lboost_log\
+		   -g\
+		   -O0\
            -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
            -ldl
 endif
@@ -37,12 +41,13 @@ GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
 
 PROTOS_PATH = ./
+HEADER_FILES = $(wildcard *.h)
 
 vpath %.proto $(PROTOS_PATH)
 
-all: system-check greeter_client
+all: system-check testbench
 
-greeter_client: helloworld.pb.o helloworld.grpc.pb.o greeter_client.o
+testbench: helloworld.pb.o helloworld.grpc.pb.o testbench.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
 .PRECIOUS: %.grpc.pb.cc
@@ -53,9 +58,10 @@ greeter_client: helloworld.pb.o helloworld.grpc.pb.o greeter_client.o
 %.pb.cc: %.proto
 	$(PROTOC) -I $(PROTOS_PATH) --cpp_out=. $<
 
+# clean:
+# 	rm -f *.o *.pb.cc *.pb.h greeter_client greeter_server greeter_async_client greeter_async_client2 greeter_async_server
 clean:
-	rm -f *.o *.pb.cc *.pb.h greeter_client greeter_server greeter_async_client greeter_async_client2 greeter_async_server
-
+	rm -f testbench.o testbench
 
 # The following is to test your system and ensure a smoother experience.
 # They are by no means necessary to actually compile a grpc-enabled software.

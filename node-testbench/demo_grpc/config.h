@@ -1,5 +1,12 @@
+#pragma once
 #include <fstream>
 #include <iostream>
+
+#define BOOST_LOG_DYN_LINK 1
+#include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/expressions.hpp>
+namespace logging = boost::log;
 
 #include "json.hpp"
 
@@ -34,7 +41,7 @@ struct TestStabilityConfig {
 };
 
 
-void from_json(const json& j, TestResultConfig& p) {
+void FromJson(const json& j, TestResultConfig& p) {
     p.thread_num = j.at("thread_num").get<int32_t>();
     p.timeout_ms = j.at("timeout_ms").get<int32_t>();
     p.qps_limit = j.at("qps_limit").get<int32_t>();
@@ -42,7 +49,7 @@ void from_json(const json& j, TestResultConfig& p) {
     p.sample_num = j.at("sample_num").get<int32_t>();
 }
 
-void from_json(const json& j, TestMaxQpsConfig& p) {
+void FromJson(const json& j, TestMaxQpsConfig& p) {
     p.thread_num = j.at("thread_num").get<int32_t>();
     p.timeout_ms = j.at("timeout_ms").get<int32_t>();
     p.request_duration_each_iter_sec = j.at("request_duration_each_iter_sec").get<int32_t>();
@@ -51,17 +58,17 @@ void from_json(const json& j, TestMaxQpsConfig& p) {
     p.qps_step_size_percent = j.at("qps_step_size_percent").get<double>();
 }
 
-void from_json(const json& j, TestStabilityConfig& p) {
+void FromJson(const json& j, TestStabilityConfig& p) {
     p.thread_num = j.at("thread_num").get<int32_t>();
     p.load_percent = j.at("load_percent").get<double>();
     p.timeout_ms = j.at("timeout_ms").get<int32_t>();
     p.test_duration_sec = j.at("test_duration_sec").get<int32_t>();
 }
 
-bool read_config_from_file(const std::string& filename, 
-                        TestResultConfig& resultConfig, 
-                        TestMaxQpsConfig& maxQpsConfig, 
-                        TestStabilityConfig& stabilityConfig) {
+bool ReadConfigFromFile(const std::string& filename, 
+                        TestResultConfig& result_config, 
+                        TestMaxQpsConfig& max_qps_config, 
+                        TestStabilityConfig& stability_config) {
     std::ifstream i(filename);
     if(!i.is_open()){
         std::cerr << "Could not open file: " << filename << std::endl;
@@ -77,7 +84,7 @@ bool read_config_from_file(const std::string& filename,
     }
     
     if(j.contains("test_result") && j["test_result"].is_object()) {
-        from_json(j["test_result"], resultConfig);
+        FromJson(j["test_result"], result_config);
     }
     else {
         std::cerr << "Missing or invalid 'test_result' in JSON.\n";
@@ -85,14 +92,14 @@ bool read_config_from_file(const std::string& filename,
     }
 
     if(j.contains("test_max_qps") && j["test_max_qps"].is_object()) {
-        from_json(j["test_max_qps"], maxQpsConfig);
+        FromJson(j["test_max_qps"], max_qps_config);
     } else {
         std::cerr << "Missing or invalid 'test_max_qps' in JSON.\n";
         return false;
     }
 
     if(j.contains("test_stability") && j["test_stability"].is_object()) {
-        from_json(j["test_stability"], stabilityConfig);
+        FromJson(j["test_stability"], stability_config);
     } else {
         std::cerr << "Missing or invalid 'test_stability' in JSON.\n";
         return false;

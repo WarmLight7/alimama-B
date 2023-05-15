@@ -11,6 +11,14 @@
 
 #include <grpcpp/impl/codegen/status.h>
 #include <grpcpp/impl/codegen/client_context.h>
+#include <grpc/grpc.h>
+#include <grpc/support/time.h>
+
+#define BOOST_LOG_DYN_LINK 1
+#include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/expressions.hpp>
+namespace logging = boost::log;
 
 #include "concurent_queue.h"
 
@@ -32,7 +40,7 @@ struct EachResp {
 };
 
 template <typename T_Resp>
-struct Summary {
+struct SummaryData {
     uint64_t completed_requests;
     uint64_t success_request_count;
     double  success_request_percent;
@@ -46,33 +54,31 @@ struct Summary {
 template <typename T_Req, typename T_Resp>
 class GrpcBenchmark {
 private:
-    ConcurrentQueue<EachReqInternal<T_Req>> requests;
-    ConcurrentQueue<EachResp<T_Resp>> responses;
-    std::vector<std::thread> threads;
-    std::atomic<bool> enable;
-    std::atomic<int32_t> pending_num;
+    ConcurrentQueue<EachReqInternal<T_Req>> requests_;
+    ConcurrentQueue<EachResp<T_Resp>> responses_;
+    std::vector<std::thread> threads_;
+    std::atomic<bool> enable_;
+    std::atomic<int32_t> pending_num_;
     std::mutex mutex_;
-    std::condition_variable cv_;
+    std::condition_variable cv_wait_;
+    double max_timesleep_ms_;
 
-    int64_t deadline_ms;
+    int64_t deadline_ms_;
 public:
     using DoRequestFunc = std::function<Status(ClientContext&, T_Req&, T_Resp&)>;
-    using SummaryType = Summary<T_Resp>;
-    GrpcBenchmark(DoRequestFunc do_request, int32_t threads_num=1, int64_t deadline_ms=10, int32_t qps_limit=1000):
-        threads(threads_num), enable(true), pending_num{0}, deadline_ms{deadline_ms} {
-        auto max_timesleep_ms = 1 * 1000/(qps_limit * 1.0 / threads_num);
-        std::cout << " threads_num " << threads_num << " deadline_ms " << deadline_ms << " qps_limit " << qps_limit << std::endl;
+    using SummaryType = SummaryData<T_Resp>;
+    GrpcBenchmark(DoRequestFunc do_request, int32_t threads_num=1, int64_t deadline_ms_=10, int32_t qps_limit=1000):
+        threads_(threads_num), enable_(true), pending_num_{0}, deadline_ms_{deadline_ms_},requests_(0, "bencharmk_requests"),responses_(0, "bencharmk_responses") {
+        this->max_timesleep_ms_ = 1 * 1000/(qps_limit * 1.0 / threads_num);
+        BOOST_LOG_TRIVIAL(info) << " threads_num " << threads_num << " deadline_ms_ " << deadline_ms_ << " qps_limit " << qps_limit << " max_timesleep_ms " << this->max_timesleep_ms_ << std::endl;
 
-        for (size_t i = 0; i < this->threads.size(); ++i) {
-            threads[i] = std::thread([&]() {
-                while (this->enable.load()) {
-                    EachReqInternal<T_Req> each;
-                    while (!this->requests.try_pop(each) && this->enable) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
+        for (size_t i = 0; i < this->threads_.size(); ++i) {
+            threads_[i] = std::thread([&]() {
+                EachReqInternal<T_Req> each;
+                while (this->enable_.load() && this->requests_.WaitAndPop(each) != QueueStatus::Closed) {
                     ClientContext context;
                     auto start = std::chrono::steady_clock::now();
-                    gpr_timespec timeout = gpr_time_from_millis(this->deadline_ms, GPR_TIMESPAN);
+                    gpr_timespec timeout = gpr_time_from_millis(this->deadline_ms_, GPR_TIMESPAN);
                     context.set_deadline(timeout);
                     T_Resp resp;
                     Status status = do_request(context, each.request, resp);
@@ -85,12 +91,17 @@ public:
                         status,
                         latency
                     };
-                    this->responses.push(eachResp);
-                    auto sleep_ms = max_timesleep_ms - latency;
+                    if (this->responses_.Push(eachResp) == QueueStatus::Closed) {
+                        break;
+                    }
+                    this->pending_num_ --;
+                    if (this->pending_num_ == 0) {
+                        this->cv_wait_.notify_all();
+                    }
+                    auto sleep_ms = this->max_timesleep_ms_ - latency;
                     if(sleep_ms > 0) {
                         std::this_thread::sleep_for(std::chrono::milliseconds(int32_t(sleep_ms)));
                     }
-                    this->pending_num --;
                 }
             });
         }
@@ -101,48 +112,58 @@ public:
     GrpcBenchmark& operator=(GrpcBenchmark&&) = delete;
 
     ~GrpcBenchmark() {
-        this->enable.store(false);
-        for (size_t i = 0; i < this->threads.size(); ++i) {
-            this->threads[i].join();
+        this->enable_.store(false);
+        this->requests_.Close();
+        this->responses_.Close();
+        this->cv_wait_.notify_all();
+        for (size_t i = 0; i < this->threads_.size(); ++i) {
+            this->threads_[i].join();
         }
     }
 
-    void request(uint64_t id, const T_Req& req) {
-        this->pending_num ++;
+    bool Request(uint64_t id, const T_Req& req) {
+        this->pending_num_ ++;
         EachReqInternal<T_Req> internal {
             id,
             req
         };
-        this->requests.push(internal);
+        if (this->requests_.Push(internal) == QueueStatus::Closed) {
+            return false;
+        } else {
+            return true;
+        }
     }
 
-    void wait_all() {
-        while (this->pending_num > 0 && this->enable) {
+    void WaitAll() {
+        while (this->pending_num_ > 0 && this->enable_.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 
     // return false if timeout
-    bool wait_all_until_timeout(int64_t timeout_ms=0) {
-        auto start = std::chrono::steady_clock::now();
-        while (this->pending_num > 0 && this->enable) {
-            auto current = std::chrono::steady_clock::now();
-            auto elapsedtime_ms = std::chrono::duration<double, std::milli>(current - start).count();
-            if (timeout_ms > 0 && elapsedtime_ms > timeout_ms) {
-                this->enable = false;
-                return false;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    bool WaitAllUntilTimeout(int64_t timeout_ms=0) {
+        std::unique_lock<std::mutex> lock(this->mutex_);
+
+        if (this->cv_wait_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&] { return !this->enable_.load() || (this->enable_.load() && this->pending_num_.load() == 0); })) {
+            return true;
+        } else { // timeout
+            this->enable_.store(false);
+            this->requests_.Close();
+            this->responses_.Close();
+            return false;
         }
-        return true;
     }
 
-    Summary<T_Resp> summary() {
-        Summary<T_Resp> resps{};
+    SummaryData<T_Resp> Summary() {
+        SummaryData<T_Resp> resps{};
         EachResp<T_Resp> resp;
         double total_latency = 0;
         boost::heap::priority_queue<double> pq{}; 
-        while(this->responses.try_pop(resp)) {
+        while(true) {
+            auto status = this->responses_.TryPop(resp);
+            if (status == QueueStatus::Empty || status == QueueStatus::Closed) {
+                break;
+            }
             resps.completed_requests ++;
             if (!resp.status.ok() && resp.status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
                 resps.timeout_request_count ++;
