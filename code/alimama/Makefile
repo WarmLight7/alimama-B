@@ -1,19 +1,4 @@
-#
-# Copyright 2015 gRPC authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-
+IMAGE = public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
@@ -22,31 +7,26 @@ CXXFLAGS += -std=c++17
 ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
-		   -lboost_log\
            -lgrpc++_reflection\
-           -ldl
+           -ldl 
 else
 LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
-		   -letcd-cpp-api\
-		   -lcpprest\
-		   -lboost_log\
-		   -O2\
            -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
            -ldl
+LDFLAGS += -lpthread -letcd-cpp-api -lprotobuf -lgrpc++ -lgrpc -lz -lcpprest -lssl -lcrypto -lboost_system -I/usr/local/include/etcd/proto/
 endif
 PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
 
 PROTOS_PATH = ./
-HEADER_FILES = $(wildcard *.h)
 
 vpath %.proto $(PROTOS_PATH)
 
-all: system-check testbench
+all: demo_alimama_search_service
 
-testbench: helloworld.pb.o helloworld.grpc.pb.o testbench.o
+demo_alimama_search_service: alimama.pb.o alimama.grpc.pb.o demo_alimama_search_service.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
 .PRECIOUS: %.grpc.pb.cc
@@ -57,10 +37,9 @@ testbench: helloworld.pb.o helloworld.grpc.pb.o testbench.o
 %.pb.cc: %.proto
 	$(PROTOC) -I $(PROTOS_PATH) --cpp_out=. $<
 
-# clean:
-# 	rm -f *.o *.pb.cc *.pb.h greeter_client greeter_server greeter_async_client greeter_async_client2 greeter_async_server
 clean:
-	rm -f testbench.o testbench
+	rm -f *.o *.pb.cc *.pb.h demo_alimama_search_service
+
 
 # The following is to test your system and ensure a smoother experience.
 # They are by no means necessary to actually compile a grpc-enabled software.
@@ -114,3 +93,6 @@ endif
 ifneq ($(SYSTEM_OK),true)
 	@false
 endif
+
+docker:
+	docker run --rm -it  -v ./:/work  -w /work --network alimama ${IMAGE} bash

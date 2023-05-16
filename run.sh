@@ -28,5 +28,4 @@ cp build node-3 -rp
 docker compose -f docker-compose-run.yml down
 docker compose -f docker-compose-run.yml up -d
 
-echo "4-Tail Log"
-tail -F node-testbench/logs/test.log
+inotifywait -e modify "node-testbench/testbenchResult.json"

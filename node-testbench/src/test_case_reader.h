@@ -15,7 +15,7 @@ namespace logging = boost::log;
 #include "concurent_queue.h"
 #include "csv.h"
 
-#include "helloworld.grpc.pb.h"
+#include "alimama.grpc.pb.h"
 
 using alimama::proto::Request;
 using alimama::proto::Response;

@@ -11,7 +11,7 @@
 #include <etcd/Client.hpp>
 #include <boost/lockfree/queue.hpp>
 #include <grpcpp/grpcpp.h>
-#include "helloworld.grpc.pb.h"
+#include "alimama.grpc.pb.h"
 
 #include "grpc_benchmark.h"
 #include "test_case_reader.h"

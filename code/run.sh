@@ -1,1 +1,1 @@
-./demo_grpc/greeter_server
+./alimama/demo_alimama_search_service

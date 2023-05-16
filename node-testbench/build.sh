@@ -1,1 +1,1 @@
-cd demo_grpc && make clean && make
+cd src && make cleanall && make

@@ -67,6 +67,12 @@
         "csignal": "cpp",
         "iomanip": "cpp",
         "test_case_reader,h": "cpp",
-        "fstream": "cpp"
+        "fstream": "cpp",
+        "any": "cpp",
+        "codecvt": "cpp",
+        "forward_list": "cpp",
+        "ranges": "cpp",
+        "valarray": "cpp",
+        "*.ipp": "cpp"
     }
 }

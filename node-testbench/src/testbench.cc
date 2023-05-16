@@ -11,7 +11,6 @@
 #include <etcd/Client.hpp>
 #include <boost/lockfree/queue.hpp>
 #include <grpcpp/grpcpp.h>
-#include "helloworld.grpc.pb.h"
 
 #include "grpc_benchmark.h"
 #include "test_case_reader.h"
@@ -19,6 +18,7 @@
 #include "test_case_reader_async.h"
 #include "config.h"
 #include "test_search_service.h"
+#include "alimama.grpc.pb.h"
 
 #define BOOST_LOG_DYN_LINK 1
 #include <boost/log/core.hpp>
@@ -34,20 +34,26 @@ using alimama::proto::Request;
 using alimama::proto::Response;
 using alimama::proto::SearchService;
 
-std::unique_ptr<SearchService::Stub> setupSearchService() {
+using StubsVector=std::vector<std::unique_ptr<SearchService::Stub>>;
+StubsVector setupSearchService() {
+  StubsVector stubs{};
   etcd::Client etcd("http://etcd:2379");
-  auto response =  etcd.get("/services/searchservice").get();
+  std::string prefix = "/services/searchservice/";
+	etcd::Response response = etcd.keys(prefix).get();
   if (response.is_ok()) {
-      BOOST_LOG_TRIVIAL(info) << "Service connected successful.";
+      BOOST_LOG_TRIVIAL(info) << "etcd connected successful.";
   } else {
-      BOOST_LOG_TRIVIAL(info) <<  "Service connected failed: " << response.error_message();
-      return std::unique_ptr<SearchService::Stub>{};
+      BOOST_LOG_TRIVIAL(info) <<  "etcd connected failed: " << response.error_message();
+      return stubs;
   }
-  std::string server_address = response.value().as_string();
-  BOOST_LOG_TRIVIAL(info)  << "server_address " << server_address;
 
-  std::unique_ptr<SearchService::Stub> stub(SearchService::NewStub(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials())));
-  return stub;
+  for (size_t i = 0; i < response.keys().size(); i++) {
+    std::string server_address = std::string(response.key(i)).substr(prefix.size());
+    BOOST_LOG_TRIVIAL(info)  << "found server_address " << server_address;
+    std::unique_ptr<SearchService::Stub> stub(SearchService::NewStub(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials())));
+    stubs.push_back(std::move(stub));
+  }
+  return stubs;
 }
 
 void Command(std::string command) {
@@ -162,22 +168,45 @@ void TestResponseTimeCalcStat(SearchServiceGprcBenchmark::DoRequestFunc doreqeus
     reader.stop();
 }
 
-void TestAll(Statistic& stat) {
-  auto stub = setupSearchService();
-    SearchServiceGprcBenchmark::DoRequestFunc doreqeust = [&stub](ClientContext& ctx, Request& req, Response &resp) -> Status {
-      return stub->Search(&ctx, req, &resp);
-    };
+bool CheckStubs(StubsVector& stubs) {
+  if (stubs.size() == 0) {
+    BOOST_LOG_TRIVIAL(error)  << "failed to setup serach service ";
+  }
+  for(auto& stub: stubs) {
+    if (!stub) {
+      BOOST_LOG_TRIVIAL(error)  << "failed to setup serach service , got nullptr ";
+      return false;
+    }
+  }
+  return true;
+}
 
-    TestResultConfig test_result_cfg {};
-    TestMaxQpsConfig test_max_qps_cfg {};
-    TestStabilityConfig test_stability_cfg {};
-    TestResponseTimeConfig test_response_time_cfg {};
-    ReadConfigFromFile("config.json", test_result_cfg, test_max_qps_cfg, test_stability_cfg, test_response_time_cfg);
-    auto qps_baseline = TestResulCalcStat(doreqeust, test_result_cfg, stat);
-    auto max_qps = TestMaxQpsCalcStat(doreqeust, test_max_qps_cfg, qps_baseline, stat);
-    TestResponseTimeCalcStat(doreqeust, test_response_time_cfg, max_qps, stat);
-    TestServiceStabilityCalcStat(doreqeust, test_stability_cfg, max_qps, stat);
-    stat.final_score = 0.5 * stat.result_score + 0.2 * stat.response_time_score + 0.2 * stat.capacity_score + 0.1 * stat.service_score;
+const std::string kConfigFilePath("config.json");
+void TestAll(Statistic& stat) {
+  auto stubs = setupSearchService();
+  auto ok = CheckStubs(stubs);
+  if (!ok) {
+    BOOST_LOG_TRIVIAL(error)  << "check stubs failed ";
+    return;
+  }
+
+  std::atomic<uint32_t> round_robin_idx{0};
+  SearchServiceGprcBenchmark::DoRequestFunc doreqeust = [&stubs, &round_robin_idx](ClientContext& ctx, Request& req, Response &resp) -> Status {
+    auto idx = round_robin_idx.fetch_add(1);
+    idx = idx % stubs.size();
+    return stubs[idx]->Search(&ctx, req, &resp);
+  };
+
+  TestResultConfig test_result_cfg {};
+  TestMaxQpsConfig test_max_qps_cfg {};
+  TestStabilityConfig test_stability_cfg {};
+  TestResponseTimeConfig test_response_time_cfg {};
+  ReadConfigFromFile(kConfigFilePath, test_result_cfg, test_max_qps_cfg, test_stability_cfg, test_response_time_cfg);
+  auto qps_baseline = TestResulCalcStat(doreqeust, test_result_cfg, stat);
+  auto max_qps = TestMaxQpsCalcStat(doreqeust, test_max_qps_cfg, qps_baseline, stat);
+  TestResponseTimeCalcStat(doreqeust, test_response_time_cfg, max_qps, stat);
+  TestServiceStabilityCalcStat(doreqeust, test_stability_cfg, max_qps, stat);
+  stat.final_score = 0.5 * stat.result_score + 0.2 * stat.response_time_score + 0.2 * stat.capacity_score + 0.1 * stat.service_score;
 }
 
 void init_logging() {
