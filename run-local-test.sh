@@ -1,7 +1,4 @@
-
-#这个只是当前的 demo 模板，后续需要根据需求拆分，比如拆分成 build.sh, tar-submit.sh，debug.sh这样的
-set -ex
-
+#!/bin/bash
 echo "0-Init"
 cd `dirname $0`
 rm node-1 node-2 node-3 build -rf || true
@@ -27,5 +24,4 @@ cp build node-2 -rp
 cp build node-3 -rp
 docker compose -f docker-compose-run.yml down
 docker compose -f docker-compose-run.yml up -d
-
-inotifywait -e modify "node-testbench/testbenchResult.json"
+docker compose -f docker-compose-run.yml logs -f testbench
