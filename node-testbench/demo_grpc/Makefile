@@ -31,8 +31,7 @@ LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
 		   -letcd-cpp-api\
 		   -lcpprest\
 		   -lboost_log\
-		   -g\
-		   -O0\
+		   -O2\
            -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
            -ldl
 endif
