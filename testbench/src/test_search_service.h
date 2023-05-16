@@ -85,8 +85,14 @@ void TestResultScore(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestCa
   BOOST_LOG_TRIVIAL(trace)  << "TestResultScore request num " << config.request_times;
   for(size_t i=0; i<config.request_times; i++) {
     TestCasePair pair{};
-    reader.pop(pair);
-    bench.Request(i, pair.req, pair.response);
+    if (!reader.pop(pair)) {
+      BOOST_LOG_TRIVIAL(error)  << "pop data failed";
+      break;
+    }
+    if (!bench.Request(i, pair.req, pair.response)) {
+      BOOST_LOG_TRIVIAL(error)  << "request data failed";
+      break;
+    }
   }
   bench.WaitAll();
 
@@ -120,9 +126,13 @@ SearchServiceGprcBenchmark::SummaryType TestMaxQps(SearchServiceGprcBenchmark::D
     for (size_t j = 0; j < request_times; ++j) {
       TestCasePair pair{};
       if (!reader.pop(pair)) {
-        BOOST_LOG_TRIVIAL(trace)  << "pop from reader failed";
+        BOOST_LOG_TRIVIAL(error)  << "pop data failed";
+        break;
       }
-      bench.Request(i, pair.req, pair.response);
+      if (!bench.Request(i, pair.req, pair.response)) {
+        BOOST_LOG_TRIVIAL(error)  << "request data failed";
+        break;
+      }
     }
     bench.WaitAllUntilTimeout(cfg.request_duration_each_iter_sec * 1000);
     auto end = std::chrono::steady_clock::now();
@@ -165,8 +175,14 @@ SearchServiceGprcBenchmark::SummaryType TestResponseTime(SearchServiceGprcBenchm
   auto start = std::chrono::steady_clock::now();
   for(size_t i=0; i<request_times; i++) {
     TestCasePair pair{};
-    reader.pop(pair);
-    bench.Request(i, pair.req, pair.response);
+    if (!reader.pop(pair)) {
+      BOOST_LOG_TRIVIAL(error)  << "pop data failed";
+      break;
+    }
+    if (!bench.Request(i, pair.req, pair.response)) {
+      BOOST_LOG_TRIVIAL(error)  << "request data failed";
+      break;
+    }
   }
   bench.WaitAllUntilTimeout(cfg.test_duration_sec * 1000);
   auto end = std::chrono::steady_clock::now();
@@ -185,8 +201,14 @@ SearchServiceGprcBenchmark::SummaryType TestServiceStabilityScore(SearchServiceG
   auto start = std::chrono::steady_clock::now();
   for(size_t i=0; i<request_times; i++) {
     TestCasePair pair{};
-    reader.pop(pair);
-    bench.Request(i, pair.req, pair.response);
+    if (!reader.pop(pair)) {
+      BOOST_LOG_TRIVIAL(error)  << "pop data failed";
+      break;
+    }
+    if (!bench.Request(i, pair.req, pair.response)) {
+      BOOST_LOG_TRIVIAL(error)  << "request data failed";
+      break;
+    }
   }
   bench.WaitAllUntilTimeout(cfg.test_duration_sec * 1000);
   auto end = std::chrono::steady_clock::now();
