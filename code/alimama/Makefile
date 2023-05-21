@@ -12,6 +12,8 @@ LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
 else
 LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
+		   -O2\
+		   -fsanitize=address -fno-omit-frame-pointer\
            -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
            -ldl
 LDFLAGS += -lpthread -letcd-cpp-api -lprotobuf -lgrpc++ -lgrpc -lz -lcpprest -lssl -lcrypto -lboost_system -I/usr/local/include/etcd/proto/

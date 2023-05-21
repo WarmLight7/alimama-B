@@ -60,12 +60,14 @@ class SearchServiceImpl final : public SearchService::Service {
 
 void RunServer() {
     const char* env_var = std::getenv("SERVICE_NAME");
-    std::string env_var_str = std::string("127.0.0.1");
+    std::string env_var_str = std::string("0.0.0.0");
     if (env_var != nullptr) {
       env_var_str = std::string(env_var);
     } else {
-      std::cout << "service " << env_var << std::endl;
+      std::cout << "service " << env_var_str << std::endl;
     }
+    std::cout << "Service registration starting.\n";
+
     std::string server_address = env_var_str + std::string(":50051");
     SearchServiceImpl service;
 
@@ -79,7 +81,7 @@ void RunServer() {
     etcd::Client etcd("http://etcd:2379");
 
     // 将服务地址注册到etcd中
-    auto response = etcd.set("/services/searchservice", server_address).get();
+    auto response = etcd.set("/services/searchservice/node1:50051", server_address).get();
     if (response.is_ok()) {
         std::cout << "Service registration successful.\n";
     } else {

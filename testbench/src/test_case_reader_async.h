@@ -47,8 +47,8 @@ public:
         for (size_t i = 0; i < this->threads_.size(); ++i) {
             threads_[i] = std::thread([&]() {
                 while(true) {
-                    Request request{};
-                    Response response{};
+                    RequestPtr request = std::make_shared<alimama::proto::Request>();
+                    ResponsePtr response = std::make_shared<alimama::proto::Response>();
                     this->read_next_row(request, response);
                     this->read_num_ ++;
                     BOOST_LOG_TRIVIAL(trace) << "reapeat_ " << this->reapeat_ << " read_num_: " << this->read_num_;
@@ -63,7 +63,7 @@ public:
         }
     }
 
-    void read_next_row(Request& request, Response& response) {
+    void read_next_row(RequestPtr& request, ResponsePtr& response) {
         std::string keywords, context_vector;
         uint64_t hour, topn;
         std::string adgroup_ids, prices;
@@ -75,18 +75,18 @@ public:
         }
 
         for (auto keyword : parseUint64List(keywords)) {
-            request.add_keywords(keyword);
+            request->add_keywords(keyword);
         }
         for (auto vec : parseFloatList(context_vector)) {
-            request.add_context_vector(vec);
+            request->add_context_vector(vec);
         }
-        request.set_hour(hour);
-        request.set_topn(topn);
+        request->set_hour(hour);
+        request->set_topn(topn);
         for (auto id : parseUint64List(adgroup_ids)) {
-            response.add_adgroup_ids(id);
+            response->add_adgroup_ids(id);
         }
         for (auto price : parseUint64List(prices)) {
-            response.add_prices(price);
+            response->add_prices(price);
         }
     }
 

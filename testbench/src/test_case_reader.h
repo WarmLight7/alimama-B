@@ -17,13 +17,13 @@ namespace logging = boost::log;
 
 #include "alimama.grpc.pb.h"
 
-using alimama::proto::Request;
-using alimama::proto::Response;
+using RequestPtr = std::shared_ptr<alimama::proto::Request>;
+using ResponsePtr = std::shared_ptr<alimama::proto::Response>;
 
 struct TestCasePair{
     bool repeat;
-    Request req;
-    Response response;
+    RequestPtr req;
+    ResponsePtr response;
 };
 
 class TestCaseReader{

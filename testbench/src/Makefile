@@ -23,6 +23,8 @@ ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
 		   -lboost_log\
+			-g\
+		   -fsanitize=address\
            -lgrpc++_reflection\
            -ldl
 else
@@ -31,7 +33,7 @@ LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
 		   -letcd-cpp-api\
 		   -lcpprest\
 		   -lboost_log\
-		   -O2\
+		   -O0\
            -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
            -ldl
 endif
@@ -44,7 +46,10 @@ HEADER_FILES = $(wildcard *.h)
 
 vpath %.proto $(PROTOS_PATH)
 
-all: system-check testbench
+all: system-check testbench concurent_queue_bench
+
+concurent_queue_bench: alimama.pb.o alimama.grpc.pb.o concurent_queue_bench.o
+	$(CXX) $^ $(LDFLAGS) -o $@
 
 testbench: alimama.pb.o alimama.grpc.pb.o testbench.o
 	$(CXX) $^ $(LDFLAGS) -o $@

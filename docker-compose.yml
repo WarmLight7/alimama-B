@@ -95,11 +95,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: 2G 
+          cpus: '8.0'
+          memory: 8G 
         reservations:
-          cpus: '4.0'
-          memory: 2G
+          cpus: '8.0'
+          memory: 8G
     networks:
       - alimama
     depends_on:

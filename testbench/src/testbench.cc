@@ -30,13 +30,12 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 
-using alimama::proto::Request;
-using alimama::proto::Response;
-using alimama::proto::SearchService;
 
+using alimama::proto::SearchService;
 using StubsVector=std::vector<std::unique_ptr<SearchService::Stub>>;
-StubsVector setupSearchService() {
-  StubsVector stubs{};
+
+std::vector<std::string> setupSearchService() {
+  std::vector<std::string> services{};
   etcd::Client etcd("http://etcd:2379");
   std::string prefix = "/services/searchservice/";
 	etcd::Response response = etcd.keys(prefix).get();
@@ -44,16 +43,14 @@ StubsVector setupSearchService() {
       BOOST_LOG_TRIVIAL(info) << "etcd connected successful.";
   } else {
       BOOST_LOG_TRIVIAL(info) <<  "etcd connected failed: " << response.error_message();
-      return stubs;
+      return services;
   }
-
   for (size_t i = 0; i < response.keys().size(); i++) {
     std::string server_address = std::string(response.key(i)).substr(prefix.size());
     BOOST_LOG_TRIVIAL(info)  << "found server_address " << server_address;
-    std::unique_ptr<SearchService::Stub> stub(SearchService::NewStub(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials())));
-    stubs.push_back(std::move(stub));
+    services.push_back(server_address);
   }
-  return stubs;
+  return services;
 }
 
 void Command(std::string command) {
@@ -89,25 +86,25 @@ void DumpStats(Statistic& stat) {
   j["extras"]["M"] = stat.M; // TODO: 待定项
   j["score"] = j["extras"]["score"]  = stat.final_score;
   std::ofstream of("./testbenchResult.json", std::ios::out);
-  of << j.dump() << std::endl;
+  of << j.dump();
   of.close();
   BOOST_LOG_TRIVIAL(info)  << "得分情况：: " << j.dump();
 }
 
-double TestResulCalcStat(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestResultConfig& cfg, Statistic& stat) {
-    BOOST_LOG_TRIVIAL(trace)  << "reader start " << std::endl;
+double TestResulCalcStat(GrpcClientPtr cli, TestResultConfig& cfg, Statistic& stat) {
+    BOOST_LOG_TRIVIAL(trace)  << "reader start ";
     auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     SearchServiceGprcBenchmark::SummaryType summary{};
     double qps_baseline {};
-    BOOST_LOG_TRIVIAL(trace)  << "TestResultScore " << std::endl;
-    TestResultScore(doreqeust, reader, cfg, summary, qps_baseline);
-    BOOST_LOG_TRIVIAL(info)  << "qps_baseline " << qps_baseline << std::endl;
-    auto& user_summary = summary.user_summary;
+    BOOST_LOG_TRIVIAL(info)  << "TestResultScore ";
+    TestResultScore(cli, reader, cfg, summary, qps_baseline);
+    BOOST_LOG_TRIVIAL(info)  << "qps_baseline " << qps_baseline;
+    auto& user_summary = summary.custom_summary;
     if (user_summary.ad_correct_num == user_summary.total_num) {
       stat.result_score += 80;
-    } else if (user_summary.ad_partial_correct_num == summary.user_summary.total_num) {
+    } else if (user_summary.ad_partial_correct_num == summary.custom_summary.total_num) {
       stat.result_score += 50;
     } else if ((user_summary.ad_partial_correct_num + user_summary.ad_correct_num) == user_summary.total_num) {
       stat.result_score += 50;
@@ -119,28 +116,28 @@ double TestResulCalcStat(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, Te
     return qps_baseline;
 }
 
-double TestMaxQpsCalcStat(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestMaxQpsConfig& cfg, int32_t qps_baseline, Statistic& stat) {
-    auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
+double TestMaxQpsCalcStat(GrpcClientPtr cli, TestMaxQpsConfig& cfg, int32_t qps_baseline, Statistic& stat) {
+    auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     cfg.qps_baseline = qps_baseline;
-    BOOST_LOG_TRIVIAL(trace)  << "TestMaxQps " << std::endl;
+    BOOST_LOG_TRIVIAL(info)  << "TestMaxQps ";
     double max_qps = 0;
-    auto summary = TestMaxQps(doreqeust, reader, cfg, max_qps);
-    BOOST_LOG_TRIVIAL(info)  << "max_qps " << max_qps << std::endl;
+    auto summary = TestMaxQps(cli, reader, cfg, max_qps);
+    BOOST_LOG_TRIVIAL(info)  << "max_qps " << max_qps;
     stat.max_qps = max_qps;
     
     reader.stop();
     return max_qps;
 }
 
-void TestServiceStabilityCalcStat(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestStabilityConfig& cfg, int32_t max_qps, Statistic& stat) {
+void TestServiceStabilityCalcStat(GrpcClientPtr cli, TestStabilityConfig& cfg, int32_t max_qps, Statistic& stat) {
     auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     cfg.max_qps = max_qps;
-    BOOST_LOG_TRIVIAL(trace)  << "TestServiceStabilityScore " << std::endl;
-    auto summary = TestServiceStabilityScore(doreqeust, reader, cfg);
+    BOOST_LOG_TRIVIAL(info)  << "TestServiceStabilityScore ";
+    auto summary = TestServiceStabilityScore(cli, reader, cfg);
     if (summary.completed_requests == summary.success_request_count) {
       stat.service_score = 100;
     } else {
@@ -149,20 +146,21 @@ void TestServiceStabilityCalcStat(SearchServiceGprcBenchmark::DoRequestFunc dore
     reader.stop();
 }
 
-void TestResponseTimeCalcStat(SearchServiceGprcBenchmark::DoRequestFunc doreqeust, TestResponseTimeConfig& cfg, int32_t max_qps, Statistic& stat) {
+void TestResponseTimeCalcStat(GrpcClientPtr cli, TestResponseTimeConfig& cfg, int32_t max_qps, Statistic& stat) {
     auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     cfg.max_qps = max_qps;
-    BOOST_LOG_TRIVIAL(trace)  << "TestResponseTime " << std::endl;
+    BOOST_LOG_TRIVIAL(info)  << "TestResponseTime ";
     double qps = 0;
-    auto summary = TestResponseTime(doreqeust, reader, cfg, qps);
+    auto summary = TestResponseTime(cli, reader, cfg, qps);
     if (summary.success_request_percent < 0.99) {
       stat.response_time_score = 0;
     } else {
       stat.response_time_score = std::pow((cfg.timeout_ms - summary.p99_latency_ms), 2) / 100;
       stat.p99_latency_ms = summary.p99_latency_ms;
       stat.capacity_score = 100 * 2 * qps / 3 * max_qps;
+      BOOST_LOG_TRIVIAL(info)  << "qps " << qps << " max_qps " << max_qps << stat.capacity_score;
     }
 
     reader.stop();
@@ -183,29 +181,17 @@ bool CheckStubs(StubsVector& stubs) {
 
 const std::string kConfigFilePath("config.json");
 void TestAll(Statistic& stat) {
-  auto stubs = setupSearchService();
-  auto ok = CheckStubs(stubs);
-  if (!ok) {
-    BOOST_LOG_TRIVIAL(error)  << "check stubs failed ";
-    return;
-  }
-
-  std::atomic<uint32_t> round_robin_idx{0};
-  SearchServiceGprcBenchmark::DoRequestFunc doreqeust = [&stubs, &round_robin_idx](ClientContext& ctx, Request& req, Response &resp) -> Status {
-    auto idx = round_robin_idx.fetch_add(1);
-    idx = idx % stubs.size();
-    return stubs[idx]->Search(&ctx, req, &resp);
-  };
-
+  auto services = setupSearchService();
   TestResultConfig test_result_cfg {};
   TestMaxQpsConfig test_max_qps_cfg {};
   TestStabilityConfig test_stability_cfg {};
   TestResponseTimeConfig test_response_time_cfg {};
   ReadConfigFromFile(kConfigFilePath, test_result_cfg, test_max_qps_cfg, test_stability_cfg, test_response_time_cfg);
-  auto qps_baseline = TestResulCalcStat(doreqeust, test_result_cfg, stat);
-  auto max_qps = TestMaxQpsCalcStat(doreqeust, test_max_qps_cfg, qps_baseline, stat);
-  TestResponseTimeCalcStat(doreqeust, test_response_time_cfg, max_qps, stat);
-  TestServiceStabilityCalcStat(doreqeust, test_stability_cfg, max_qps, stat);
+  GrpcClientPtr cli = std::make_shared<SearchServiceGprcClient>(services);
+  auto qps_baseline = TestResulCalcStat(cli, test_result_cfg, stat);
+  auto max_qps = TestMaxQpsCalcStat(cli, test_max_qps_cfg, qps_baseline, stat);
+  TestResponseTimeCalcStat(cli, test_response_time_cfg, max_qps, stat);
+  TestServiceStabilityCalcStat(cli, test_stability_cfg, max_qps, stat);
   stat.final_score = 0.5 * stat.result_score + 0.2 * stat.response_time_score + 0.2 * stat.capacity_score + 0.1 * stat.service_score;
 }
 
@@ -215,7 +201,7 @@ void init_logging() {
 
 int main(int argc, char** argv) {
   init_logging();
-  BOOST_LOG_TRIVIAL(trace)  << "setup service" << std::endl;
+  BOOST_LOG_TRIVIAL(trace)  << "setup service";
 
   Statistic stat{};
   TestAll(stat);
