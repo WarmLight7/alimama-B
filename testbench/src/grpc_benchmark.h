@@ -205,7 +205,7 @@ public:
                         latency
                     };
                     this->pending_num_ --;
-                    if (this->pending_num_ == 0) {
+                    if (this->pending_num_ <= 0) {
                         this->cv_wait_.notify_all();
                     }
                     this->pending_compare_num_ ++;
@@ -222,7 +222,7 @@ public:
                     ok = do_compare(resp.response, resp.ref_resp, this->summary_data_.custom_summary);
                 }
                 this->pending_compare_num_ --;
-                if (this->pending_compare_num_ == 0) {
+                if (this->pending_compare_num_ <= 0) {
                     this->summary_cv_wait_.notify_all();
                 }
                 if (!ok) {
