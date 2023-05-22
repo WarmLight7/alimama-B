@@ -175,9 +175,9 @@ public:
                         auto sleep_ns = static_cast<unsigned long long>(sleep_ms*1000*1000);
                         sleepNanoseconds(sleep_ns);
                     }
-                    last_request = std::move(req);
+                    last_request = std::chrono::steady_clock::now();
 
-                    eachResp->start_t = std::chrono::steady_clock::now();
+                    eachResp->start_t = last_request;
                     bool ok = collection->cli->Request(ctx, each.request, eachResp);
                     if (!ok) {
                         BOOST_LOG_TRIVIAL(warning) << "request failed ";

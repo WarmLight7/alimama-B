@@ -34,7 +34,7 @@ services:
 
     depends_on:
       - etcd
-    working_dir: /work/build
+    working_dir: /work
     command: ["bash", "./run.sh", "node-1"]
 
   node2:
@@ -60,7 +60,7 @@ services:
       - CPU=2C
     depends_on:
       - etcd
-    working_dir: /work/build
+    working_dir: /work/
     command: ["bash", "./run.sh", "node-2"]
 
   node3:
@@ -86,7 +86,7 @@ services:
       - CPU=2C
     depends_on:
       - etcd
-    working_dir: /work/build
+    working_dir: /work/
     command: ["bash", "./run.sh", "node-3"]
 
   testbench:
