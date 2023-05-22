@@ -91,15 +91,15 @@ void DumpStats(Statistic& stat) {
   BOOST_LOG_TRIVIAL(info)  << "得分情况：: " << j.dump();
 }
 
-double TestResulCalcStat(GrpcClientPtr cli, TestResultConfig& cfg, Statistic& stat) {
+double TestResulCalcStat(std::vector<std::string> services, TestResultConfig& cfg, Statistic& stat) {
     BOOST_LOG_TRIVIAL(trace)  << "reader start ";
     auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     SearchServiceGprcBenchmark::SummaryType summary{};
     double qps_baseline {};
-    BOOST_LOG_TRIVIAL(info)  << "TestResultScore ";
-    TestResultScore(cli, reader, cfg, summary, qps_baseline);
+    BOOST_LOG_TRIVIAL(info) << std::endl  << "TestResultScore ";
+    TestResultScore(services, reader, cfg, summary, qps_baseline);
     BOOST_LOG_TRIVIAL(info)  << "qps_baseline " << qps_baseline;
     auto& user_summary = summary.custom_summary;
     if (user_summary.ad_correct_num == user_summary.total_num) {
@@ -116,14 +116,14 @@ double TestResulCalcStat(GrpcClientPtr cli, TestResultConfig& cfg, Statistic& st
     return qps_baseline;
 }
 
-double TestMaxQpsCalcStat(GrpcClientPtr cli, TestMaxQpsConfig& cfg, int32_t qps_baseline, Statistic& stat) {
+double TestMaxQpsCalcStat(std::vector<std::string> services, TestMaxQpsConfig& cfg, int32_t qps_baseline, Statistic& stat) {
     auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     cfg.qps_baseline = qps_baseline;
-    BOOST_LOG_TRIVIAL(info)  << "TestMaxQps ";
+    BOOST_LOG_TRIVIAL(info) << std::endl  << "TestMaxQps ";
     double max_qps = 0;
-    auto summary = TestMaxQps(cli, reader, cfg, max_qps);
+    auto summary = TestMaxQps(services, reader, cfg, max_qps);
     BOOST_LOG_TRIVIAL(info)  << "max_qps " << max_qps;
     stat.max_qps = max_qps;
     
@@ -131,13 +131,13 @@ double TestMaxQpsCalcStat(GrpcClientPtr cli, TestMaxQpsConfig& cfg, int32_t qps_
     return max_qps;
 }
 
-void TestServiceStabilityCalcStat(GrpcClientPtr cli, TestStabilityConfig& cfg, int32_t max_qps, Statistic& stat) {
+void TestServiceStabilityCalcStat(std::vector<std::string> services, TestStabilityConfig& cfg, int32_t max_qps, Statistic& stat) {
     auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     cfg.max_qps = max_qps;
-    BOOST_LOG_TRIVIAL(info)  << "TestServiceStabilityScore ";
-    auto summary = TestServiceStabilityScore(cli, reader, cfg);
+    BOOST_LOG_TRIVIAL(info) << std::endl << "TestServiceStabilityScore ";
+    auto summary = TestServiceStabilityScore(services, reader, cfg);
     if (summary.completed_requests == summary.success_request_count) {
       stat.service_score = 100;
     } else {
@@ -146,14 +146,14 @@ void TestServiceStabilityCalcStat(GrpcClientPtr cli, TestStabilityConfig& cfg, i
     reader.stop();
 }
 
-void TestResponseTimeCalcStat(GrpcClientPtr cli, TestResponseTimeConfig& cfg, int32_t max_qps, Statistic& stat) {
+void TestResponseTimeCalcStat(std::vector<std::string> services, TestResponseTimeConfig& cfg, int32_t max_qps, Statistic& stat) {
     auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     cfg.max_qps = max_qps;
-    BOOST_LOG_TRIVIAL(info)  << "TestResponseTime ";
+    BOOST_LOG_TRIVIAL(info) << std::endl << "TestResponseTime ";
     double qps = 0;
-    auto summary = TestResponseTime(cli, reader, cfg, qps);
+    auto summary = TestResponseTime(services, reader, cfg, qps);
     if (summary.success_request_percent < 0.99) {
       stat.response_time_score = 0;
     } else {
@@ -187,11 +187,10 @@ void TestAll(Statistic& stat) {
   TestStabilityConfig test_stability_cfg {};
   TestResponseTimeConfig test_response_time_cfg {};
   ReadConfigFromFile(kConfigFilePath, test_result_cfg, test_max_qps_cfg, test_stability_cfg, test_response_time_cfg);
-  GrpcClientPtr cli = std::make_shared<SearchServiceGprcClient>(services);
-  auto qps_baseline = TestResulCalcStat(cli, test_result_cfg, stat);
-  auto max_qps = TestMaxQpsCalcStat(cli, test_max_qps_cfg, qps_baseline, stat);
-  TestResponseTimeCalcStat(cli, test_response_time_cfg, max_qps, stat);
-  TestServiceStabilityCalcStat(cli, test_stability_cfg, max_qps, stat);
+  auto qps_baseline = TestResulCalcStat(services, test_result_cfg, stat);
+  auto max_qps = TestMaxQpsCalcStat(services, test_max_qps_cfg, qps_baseline, stat);
+  TestResponseTimeCalcStat(services, test_response_time_cfg, max_qps, stat);
+  TestServiceStabilityCalcStat(services, test_stability_cfg, max_qps, stat);
   stat.final_score = 0.5 * stat.result_score + 0.2 * stat.response_time_score + 0.2 * stat.capacity_score + 0.1 * stat.service_score;
 }
 

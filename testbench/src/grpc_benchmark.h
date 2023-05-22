@@ -9,6 +9,8 @@
 #include <iostream>
 #include <memory>
 #include <boost/heap/priority_queue.hpp>
+#include <unistd.h>
+#include <time.h>
 
 #include <grpcpp/impl/codegen/status.h>
 #include <grpcpp/impl/codegen/client_context.h>
@@ -37,7 +39,7 @@ struct EachReqInternal {
 template <typename T_Resp>
 struct EachResp {
     uint64_t id;
-    shared_ptr<std::chrono::steady_clock::time_point> start_t;
+    std::chrono::steady_clock::time_point start_t;
     T_Resp response;
     T_Resp ref_resp;
     shared_ptr<Status> status;
@@ -58,6 +60,13 @@ struct SummaryData {
 
 using grpc::CompletionQueue;
 
+void sleepNanoseconds(unsigned long long nanoseconds) {
+    struct timespec sleepTime;
+    sleepTime.tv_sec = nanoseconds / 1000000000;
+    sleepTime.tv_nsec = nanoseconds % 1000000000;
+    nanosleep(&sleepTime, NULL);
+}
+
 template <typename T_Req, typename T_Resp>
 class GrpcClient {
 public:
@@ -68,6 +77,13 @@ public:
     virtual bool Close() = 0;
 };
 
+template <typename T_Req, typename T_Resp>
+struct GrpcClientCollection {
+    shared_ptr<GrpcClient<T_Req, T_Resp>> cli;
+    ConcurrentQueue<EachReqInternal<T_Req, T_Resp>> requests;
+    ConcurrentQueue<EachResp<T_Resp>> responses;
+};
+
 template <typename T_Req, typename T_Resp, typename T_Cusom_Summary>
 class GrpcBenchmark {
 public:
@@ -75,13 +91,15 @@ public:
     using DoCompareFunc = std::function<bool(const T_Resp&, const T_Resp&, T_Cusom_Summary&)>;
     using SummaryType = SummaryData<T_Cusom_Summary>;
 private:
-    shared_ptr<GrpcClient<T_Req, T_Resp>> cli_;
     ConcurrentQueue<EachReqInternal<T_Req, T_Resp>> requests_;
     ConcurrentQueue<EachResp<T_Resp>> responses_;
+
     std::vector<std::thread> threads_;
+    std::vector<shared_ptr<GrpcClientCollection<T_Req, T_Resp>>> cli_collection_;
     
     std::thread calculator_;
-    std::thread collector_;
+    std::vector<std::thread> collectors_;
+
     std::atomic<bool> enable_;
     std::atomic<int32_t> pending_num_;
     std::mutex mutex_;
@@ -97,10 +115,9 @@ private:
     boost::heap::priority_queue<double> pq_;
 
     int64_t deadline_ms_;
+    std::atomic<uint64_t> req_idx_;
 
     bool updateSummary(const EachResp<T_Resp>& resp) {
-        CompletionQueue cq;
-        
         this->summary_data_.completed_requests ++;
         if (!resp.status->ok() && resp.status->error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
             this->summary_data_.timeout_request_count ++;
@@ -117,22 +134,32 @@ private:
         return true;
     }
 public:
-    GrpcBenchmark(shared_ptr<GrpcClient<T_Req, T_Resp>> cli, DoCompareFunc do_compare, int32_t threads_num=1, int64_t deadline_ms_=10, int32_t qps_limit=1000):
-            cli_{cli}, threads_(threads_num), enable_(true), pending_num_{0}, pending_compare_num_{0},
+    GrpcBenchmark(std::vector<shared_ptr<GrpcClient<T_Req, T_Resp>>> clis, DoCompareFunc do_compare, int32_t threads_num=1, int64_t deadline_ms_=10, int32_t qps_limit=1000):
+            threads_(threads_num), cli_collection_(threads_num), collectors_(threads_num), enable_(true), pending_num_{0}, pending_compare_num_{0},
             deadline_ms_{deadline_ms_},requests_(0, "bencharmk_requests"),responses_(0, "bencharmk_responses"),
-        summary_data_{} {
+            summary_data_{},total_latency_{},req_idx_{0} {
         this->max_timesleep_ms_ = 1 * 1000/(qps_limit * 1.0 / threads_num);
-        BOOST_LOG_TRIVIAL(info) << " threads_num " << threads_num << " deadline_ms_ " << deadline_ms_ << " qps_limit " << qps_limit << " max_timesleep_ms " << this->max_timesleep_ms_ << std::endl;
+        BOOST_LOG_TRIVIAL(info) << " threads_num " << threads_num << " deadline_ms_ " << deadline_ms_ << " qps_limit " << qps_limit << " max_timesleep_ms " << this->max_timesleep_ms_;
+
+        if (clis.size() != threads_num) {
+            BOOST_LOG_TRIVIAL(error) << " invalid clis num " << threads_num << " clis.size() " << clis.size();
+            return;
+        }
+        for(size_t i=0; i<threads_num; i++) {
+            auto collection = std::make_shared<GrpcClientCollection<T_Req, T_Resp>>();
+            collection->cli = clis[i];
+            cli_collection_[i].swap(collection);
+        }
 
         for (size_t i = 0; i < this->threads_.size(); ++i) {
-            threads_[i] = std::thread([this]() {
+            threads_[i] = std::thread([this, i]() {
+                auto collection = this->cli_collection_[i];
                 EachReqInternal<T_Req, T_Resp> each;
+                auto last_request = std::chrono::steady_clock::now();
                 while (this->enable_.load()) {
-                    auto start = std::chrono::steady_clock::now();
-                    auto status = this->requests_.WaitAndPop(each);
+                    auto status = collection->requests.WaitAndPop(each);
                     if(status == QueueStatus::Closed)
                         break;
-                    auto end_pop = std::chrono::steady_clock::now();
                     
                     auto ctx = std::make_shared<ClientContext>();
                     gpr_timespec timeout = gpr_time_from_millis(this->deadline_ms_, GPR_TIMESPAN);
@@ -141,50 +168,51 @@ public:
                     auto* eachResp = new EachResp<T_Resp>{};
                     eachResp->id = each.id;
                     eachResp->ref_resp = each.ref_resp;
-                    eachResp->start_t = std::make_shared<std::chrono::steady_clock::time_point>(start);
-                    bool ok = this->cli_->Request(ctx, each.request, eachResp);
-                    if (!ok) {
-                        continue;
-                    }
-                    auto end = std::chrono::steady_clock::now();
-                    auto latency = std::chrono::duration<double, std::milli>(end - start).count();
-                    auto sleep_ms = this->max_timesleep_ms_ - latency;
+                    auto req = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration<double, std::milli>(req - last_request).count();
+                    auto sleep_ms = this->max_timesleep_ms_ - duration;
                     if(sleep_ms > 0) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(int32_t(sleep_ms)));
-                    } else {
-                        // auto pop_latency = std::chrono::duration<double, std::milli>(end_pop - start).count();
-                        // BOOST_LOG_TRIVIAL(warning) << "sleep_ms < 0 , pop_latency" << pop_latency << "latency " << latency
-                        //     << "max_timesleep_ms_  " << this->max_timesleep_ms_;
+                        auto sleep_ns = static_cast<unsigned long long>(sleep_ms*1000*1000);
+                        sleepNanoseconds(sleep_ns);
+                    }
+                    last_request = std::move(req);
+
+                    eachResp->start_t = std::chrono::steady_clock::now();
+                    bool ok = collection->cli->Request(ctx, each.request, eachResp);
+                    if (!ok) {
+                        BOOST_LOG_TRIVIAL(warning) << "request failed ";
+                        continue;
                     }
                 }
             });
         }
-
-        this->collector_ = std::thread([this]() {
-            T_Resp resp{};
-            shared_ptr<Status> status{};
-            void* obj;
-            while(this->cli_->WaitResponse(resp, status, &obj)) {
-                EachResp<T_Resp>* eachResp = (EachResp<T_Resp>*) obj;
-                auto end = std::chrono::steady_clock::now();
-                auto latency = std::chrono::duration<double, std::milli>(end - *(eachResp->start_t)).count();
-
-                EachResp<T_Resp> respout{
-                    eachResp->id,
-                    eachResp->start_t,
-                    resp,
-                    eachResp->ref_resp,
-                    status,
-                    latency
-                };
-                this->pending_num_ --;
-                if (this->pending_num_ == 0) {
-                    this->cv_wait_.notify_all();
+        for(size_t i=0; i<cli_collection_.size(); i++) {
+            this->collectors_[i] = std::thread([this, i]() {
+                auto collection = this->cli_collection_[i];
+                T_Resp resp{};
+                shared_ptr<Status> status{};
+                void* obj;
+                while(collection->cli->WaitResponse(resp, status, &obj)) {
+                    EachResp<T_Resp>* eachResp = (EachResp<T_Resp>*) obj;
+                    auto end = std::chrono::steady_clock::now();
+                    auto latency = std::chrono::duration<double, std::milli>(end - eachResp->start_t).count();
+                    EachResp<T_Resp> respout{
+                        eachResp->id,
+                        eachResp->start_t,
+                        resp,
+                        eachResp->ref_resp,
+                        status,
+                        latency
+                    };
+                    this->pending_num_ --;
+                    if (this->pending_num_ == 0) {
+                        this->cv_wait_.notify_all();
+                    }
+                    this->pending_compare_num_ ++;
+                    this->responses_.Push(respout);
                 }
-                this->pending_compare_num_ ++;
-                this->responses_.Push(respout);
-            }
-        });
+            });
+        }
 
         this->calculator_ = std::thread([this, do_compare]() {
             EachResp<T_Resp> resp{};
@@ -210,17 +238,20 @@ public:
 
     ~GrpcBenchmark() {
         this->enable_.store(false);
-        this->requests_.Close();
-        this->responses_.Close();
+        for (auto& collection : cli_collection_) {
+            collection->requests.Close();
+            collection->responses.Close();
+            collection->cli->Close();
+        }
         this->cv_wait_.notify_all();
         this->summary_cv_wait_.notify_all();
         for (auto& thread : threads_) {
             thread.join();
         }
         this->calculator_.join();
-
-        this->cli_->Close();
-        this->collector_.join();
+        for (auto& collector : collectors_) {
+            collector.join();
+        }
     }
 
     bool Request(uint64_t id, const T_Req& req, const T_Resp& ref_resp) {
@@ -230,7 +261,9 @@ public:
             req,
             ref_resp
         };
-        if (this->requests_.Push(internal) == QueueStatus::Closed) {
+        auto idx = req_idx_.fetch_add(1);
+        idx = idx % this->cli_collection_.size();
+        if (this->cli_collection_[idx]->requests.Push(internal) == QueueStatus::Closed) {
             return false;
         } else {
             return true;
