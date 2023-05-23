@@ -30,34 +30,6 @@ using grpc::Status;
 using grpc::ClientContext;
 using std::shared_ptr;
 
-template <typename T_Req,typename T_Resp>
-struct EachReqInternal {
-    uint64_t id;
-    T_Req request;
-    T_Resp ref_resp;
-};
-
-template <typename T_Resp>
-struct EachResp {
-    uint64_t id;
-    std::chrono::steady_clock::time_point start_t;
-    T_Resp response;
-    T_Resp ref_resp;
-    shared_ptr<Status> status;
-    double latency;
-};
-
-template <typename T_Cusom_Summary>
-struct SummaryData {
-    uint64_t completed_requests;
-    uint64_t success_request_count;
-    double  success_request_percent;
-    uint64_t error_request_count;
-    uint64_t timeout_request_count;
-    double avg_latency_ms;
-    double p99_latency_ms;
-    T_Cusom_Summary custom_summary;
-};
 
 using grpc::CompletionQueue;
 
@@ -78,25 +50,45 @@ public:
     virtual bool Close() = 0;
 };
 
-template <typename T_Req, typename T_Resp>
-struct GrpcClientCollection {
-    shared_ptr<GrpcClient<T_Req, T_Resp>> cli;
-    ConcurrentQueue<EachReqInternal<T_Req, T_Resp>> requests;
-    ConcurrentQueue<EachResp<T_Resp>> responses;
-};
-
-template <typename T_Req, typename T_Resp, typename T_Cusom_Summary>
+template <typename T_Req, typename T_Resp, typename T_Cusom_Summary, typename T_Ref>
 class GrpcBenchmark {
 public:
-    using DoRequestFunc = std::function<Status(ClientContext&, T_Req&, T_Resp&)>;
-    using DoCompareFunc = std::function<bool(const T_Resp&, const T_Resp&, T_Cusom_Summary&)>;
-    using SummaryType = SummaryData<T_Cusom_Summary>;
+    struct SummaryData {
+        uint64_t completed_requests;
+        uint64_t success_request_count;
+        double  success_request_percent;
+        uint64_t error_request_count;
+        uint64_t timeout_request_count;
+        double avg_latency_ms;
+        double p99_latency_ms;
+        T_Cusom_Summary custom_summary;
+    };
+    struct EachResp {
+        uint64_t id;
+        std::chrono::steady_clock::time_point start_t;
+        T_Resp response;
+        T_Ref ref_resp;
+        shared_ptr<Status> status;
+        double latency;
+    };
+    struct EachReqInternal {
+        uint64_t id;
+        T_Req request;
+        T_Ref ref_resp;
+    };
+    struct GrpcClientCollection {
+        shared_ptr<GrpcClient<T_Req, T_Resp>> cli;
+        ConcurrentQueue<EachReqInternal> requests;
+        ConcurrentQueue<EachResp> responses;
+    };
+    using DoCompareFunc = std::function<bool(const T_Resp&, const T_Ref&, T_Cusom_Summary&)>;
+    using SummaryType = SummaryData;
 private:
-    ConcurrentQueue<EachReqInternal<T_Req, T_Resp>> requests_;
-    ConcurrentQueue<EachResp<T_Resp>> responses_;
+    ConcurrentQueue<EachReqInternal> requests_;
+    ConcurrentQueue<EachResp> responses_;
 
     std::vector<std::thread> threads_;
-    std::vector<shared_ptr<GrpcClientCollection<T_Req, T_Resp>>> cli_collection_;
+    std::vector<shared_ptr<GrpcClientCollection>> cli_collection_;
     
     std::thread calculator_;
     std::vector<std::thread> collectors_;
@@ -110,14 +102,14 @@ private:
     std::mutex summary_mutex_;
     std::condition_variable summary_cv_wait_;
 
-    SummaryData<T_Cusom_Summary> summary_data_;
+    SummaryData summary_data_;
     double total_latency_;
     boost::heap::priority_queue<double> pq_;
 
     int64_t deadline_ms_;
     std::atomic<uint64_t> req_idx_;
 
-    bool updateSummary(const EachResp<T_Resp>& resp) {
+    bool updateSummary(const EachResp& resp) {
         this->summary_data_.completed_requests ++;
         if (!resp.status->ok() && resp.status->error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
             this->summary_data_.timeout_request_count ++;
@@ -151,7 +143,7 @@ public:
             return;
         }
         for(size_t i=0; i<threads_num; i++) {
-            auto collection = std::make_shared<GrpcClientCollection<T_Req, T_Resp>>();
+            auto collection = std::make_shared<GrpcClientCollection>();
             collection->cli = clis[i];
             cli_collection_[i].swap(collection);
         }
@@ -159,7 +151,7 @@ public:
         for (size_t i = 0; i < this->threads_.size(); ++i) {
             threads_[i] = std::thread([this, i, qps_each_thread]() {
                 auto collection = this->cli_collection_[i];
-                EachReqInternal<T_Req, T_Resp> each;
+                EachReqInternal each;
                 TokenBucket tb(qps_each_thread, 1);
                 while (this->enable_.load()) {
                     auto status = collection->requests.WaitAndPop(each);
@@ -170,7 +162,7 @@ public:
                     gpr_timespec timeout = gpr_time_from_millis(this->deadline_ms_, GPR_TIMESPAN);
                     ctx->set_deadline(timeout);
 
-                    auto* eachResp = new EachResp<T_Resp>{};
+                    auto* eachResp = new EachResp{};
                     eachResp->id = each.id;
                     eachResp->ref_resp = each.ref_resp;
                     tb.consume(1);
@@ -190,10 +182,10 @@ public:
                 shared_ptr<Status> status{};
                 void* obj;
                 while(collection->cli->WaitResponse(resp, status, &obj)) {
-                    EachResp<T_Resp>* eachResp = (EachResp<T_Resp>*) obj;
+                    EachResp* eachResp = (EachResp*) obj;
                     auto end = std::chrono::steady_clock::now();
                     auto latency = std::chrono::duration<double, std::milli>(end - eachResp->start_t).count();
-                    EachResp<T_Resp> respout{
+                    EachResp respout{
                         eachResp->id,
                         eachResp->start_t,
                         resp,
@@ -212,7 +204,7 @@ public:
         }
 
         this->calculator_ = std::thread([this, do_compare]() {
-            EachResp<T_Resp> resp{};
+            EachResp resp{};
             while(this->responses_.WaitAndPop(resp) != QueueStatus::Closed) {
                 bool ok{true};
                 if (this->updateSummary(resp)) {
@@ -253,7 +245,7 @@ public:
 
     bool Request(uint64_t id, const T_Req& req, const T_Resp& ref_resp) {
         this->pending_num_ ++;
-        EachReqInternal<T_Req, T_Resp> internal {
+        EachReqInternal internal {
             id,
             req,
             ref_resp

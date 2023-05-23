@@ -43,7 +43,7 @@ struct CustomSummary{
   int32_t price_correct_num; // 价格正确
 };
 using StubsVector=std::vector<std::unique_ptr<SearchService::Stub>>;
-using SearchServiceGprcBenchmark = GrpcBenchmark<RequestPtr, ResponsePtr, CustomSummary>;
+using SearchServiceGprcBenchmark = GrpcBenchmark<RequestPtr, ResponsePtr, CustomSummary, ResponsePtr>;
 using GrpcClientPtr = shared_ptr<GrpcClient<RequestPtr, ResponsePtr>>;
 
 struct RequestItem {
@@ -274,7 +274,7 @@ SearchServiceGprcBenchmark::SummaryType TestMaxQps(std::vector<std::string> serv
     last_summary = summary;
 
     if (summary.success_request_percent < cfg.success_percent_th) {
-      qps_limit = qps_limit + qps_limit * cfg.qps_step_size_percent;
+      qps_limit = qps_limit - qps_limit * cfg.qps_step_size_percent;
     } else {
       qps_limit = qps_limit + qps_limit * cfg.qps_step_size_percent;
     }
