@@ -6,6 +6,7 @@
 #include <chrono>
 #include <algorithm>
 #include <unordered_map>
+#include <random>
 
 #include <cmath>
 #include <etcd/Client.hpp>
@@ -63,9 +64,11 @@ private:
   std::mutex mtx_;
   bool enable_;
 public:
-  static std::vector<shared_ptr<GrpcClient<RequestPtr, ResponsePtr>>> CreateClients(const std::vector<std::string>& services, uint32_t threads) {
+  static std::vector<shared_ptr<GrpcClient<RequestPtr, ResponsePtr>>> CreateClients(const std::vector<std::string>& services, int32_t qps_limit) {
     std::vector<shared_ptr<GrpcClient<RequestPtr, ResponsePtr>>> clients{};
-    for(size_t i=0; i<threads; i++) {
+    constexpr int32_t kDefaultQpsEachThread{4000};
+    auto cli_num = (qps_limit / kDefaultQpsEachThread) + 1;
+    for(size_t i=0; i<cli_num; i++) {
       auto cli = std::make_shared<SearchServiceGprcClient>(services);
       if (!cli->Init()) {
         BOOST_LOG_TRIVIAL(error)  << "init clients failed";
@@ -151,9 +154,11 @@ public:
 void dump_summary(const SearchServiceGprcBenchmark::SummaryType& summary, double qps) {
   BOOST_LOG_TRIVIAL(info)  << "summary completed_requests " << summary.completed_requests;
   BOOST_LOG_TRIVIAL(info)  << "summary avg_latency_ms " << summary.avg_latency_ms;
+  BOOST_LOG_TRIVIAL(info)  << "summary p99_latency_ms " << summary.p99_latency_ms;
   BOOST_LOG_TRIVIAL(info)  << "summary qps " << qps;
   BOOST_LOG_TRIVIAL(info)  << "summary error_request_count " << summary.error_request_count;
   BOOST_LOG_TRIVIAL(info)  << "summary success_request_count " << summary.success_request_count;
+  BOOST_LOG_TRIVIAL(info)  << "summary success_request_percent " << summary.success_request_percent;
   BOOST_LOG_TRIVIAL(info)  << "summary timeout_request_count " << summary.timeout_request_count;
 }
 
@@ -191,14 +196,14 @@ bool compare_result(const ResponsePtr& resp, const ResponsePtr& ref, CustomSumma
   return true;
 }
 
-void TestResultScore(std::vector<std::string> services, TestCaseReader& reader,const TestResultConfig& config,
+void TestResultScore(std::vector<std::string> services, TestCaseReader& reader,const TestResultConfig& cfg,
     SearchServiceGprcBenchmark::SummaryType& summary, double& qpsBaseLine) {
-  auto clis = SearchServiceGprcClient::CreateClients(services, config.thread_num);
+  auto clis = SearchServiceGprcClient::CreateClients(services, cfg.qps_limit);
   if (clis.size() == 0) return;
-  SearchServiceGprcBenchmark bench(clis, compare_result, config.thread_num, config.timeout_ms, config.qps_limit);
+  SearchServiceGprcBenchmark bench(clis, compare_result, cfg.timeout_ms, cfg.qps_limit);
   auto start = std::chrono::steady_clock::now();
-  BOOST_LOG_TRIVIAL(trace)  << "TestResultScore request num " << config.request_times;
-  for(size_t i=0; i<config.request_times; i++) {
+  BOOST_LOG_TRIVIAL(trace)  << "TestResultScore request num " << cfg.request_times;
+  for(size_t i=0; i<cfg.request_times; i++) {
     TestCasePair pair{};
     if (!reader.pop(pair)) {
       BOOST_LOG_TRIVIAL(error)  << "pop data failed";
@@ -218,7 +223,7 @@ void TestResultScore(std::vector<std::string> services, TestCaseReader& reader,c
   BOOST_LOG_TRIVIAL(info)  << "qpsBaseLine " << qpsBaseLine << " summary.success_request_count " << summary.success_request_count
     << " elapsedtime_ms " << elapsedtime_ms;
 
-  if (summary.success_request_count < config.sample_num) {
+  if (summary.success_request_count < cfg.sample_num) {
       BOOST_LOG_TRIVIAL(error)  << "user success_request_count less than the threshold " << summary.success_request_count;
     return;
   }
@@ -235,10 +240,10 @@ SearchServiceGprcBenchmark::SummaryType TestMaxQps(std::vector<std::string> serv
 
   SearchServiceGprcBenchmark::SummaryType last_summary;
   for (size_t i = 0; i<cfg.max_iter_times; ++i) {
-    auto clis = SearchServiceGprcClient::CreateClients(services, cfg.thread_num);
+    auto clis = SearchServiceGprcClient::CreateClients(services, int32_t(qps_limit));
     if (clis.size() == 0) return last_summary;
 
-    SearchServiceGprcBenchmark bench(clis, compare_result_dummy, cfg.thread_num, cfg.timeout_ms, int32_t(qps_limit));
+    SearchServiceGprcBenchmark bench(clis, compare_result_dummy, cfg.timeout_ms, int32_t(qps_limit));
     int64_t request_times = qps_limit * cfg.request_duration_each_iter_sec;
     auto start = std::chrono::steady_clock::now();
     double elapsedtime_popdata_ms_all = 0;
@@ -282,9 +287,9 @@ SearchServiceGprcBenchmark::SummaryType TestMaxQps(std::vector<std::string> serv
 
 SearchServiceGprcBenchmark::SummaryType TestResponseTime(std::vector<std::string> services, TestCaseReader& reader, const TestResponseTimeConfig& cfg, double& qps) {
   auto qps_limit = cfg.max_qps;
-  auto clis = SearchServiceGprcClient::CreateClients(services, cfg.thread_num);
+  auto clis = SearchServiceGprcClient::CreateClients(services, qps_limit);
   if (clis.size() == 0) return {};
-  SearchServiceGprcBenchmark bench(clis, compare_result_dummy, cfg.thread_num, cfg.timeout_ms, qps_limit);
+  SearchServiceGprcBenchmark bench(clis, compare_result_dummy, cfg.timeout_ms, qps_limit);
   
   int32_t request_times = qps_limit * cfg.test_duration_sec;
   auto start = std::chrono::steady_clock::now();
@@ -310,9 +315,9 @@ SearchServiceGprcBenchmark::SummaryType TestResponseTime(std::vector<std::string
 
 SearchServiceGprcBenchmark::SummaryType TestServiceStabilityScore(std::vector<std::string> services, TestCaseReader& reader, const TestStabilityConfig& cfg) {
   auto qps_limit = cfg.load_percent * cfg.max_qps;
-  auto clis = SearchServiceGprcClient::CreateClients(services, cfg.thread_num);
+  auto clis = SearchServiceGprcClient::CreateClients(services, qps_limit);
   if (clis.size() == 0) return {};
-  SearchServiceGprcBenchmark bench(clis, compare_result_dummy, cfg.thread_num, cfg.timeout_ms, qps_limit);
+  SearchServiceGprcBenchmark bench(clis, compare_result_dummy, cfg.timeout_ms, qps_limit);
   
   int32_t request_times = qps_limit * cfg.test_duration_sec;
   auto start = std::chrono::steady_clock::now();

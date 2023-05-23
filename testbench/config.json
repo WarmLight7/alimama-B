@@ -1,34 +1,34 @@
 {
     "test_result": {
-        "test_case_csv": "/data/test_case2.csv",
+        "test_case_csv": "/data/test_case.csv",
         "csv_reader_capacity": 1000,
-        "thread_num": 8,
-        "timeout_ms": 500,
-        "qps_limit": 500,
-        "request_times": 1000,
+        "thread_num": 0,
+        "timeout_ms": 10,
+        "qps_limit": 2000,
+        "request_times": 4000,
         "sample_num": 500
     },
     "test_max_qps": {
-        "test_case_csv": "/data/test_case2.csv",
+        "test_case_csv": "/data/test_case.csv",
         "csv_reader_capacity": 1000,
-        "thread_num": 8,
-        "timeout_ms": 100,
-        "request_duration_each_iter_sec": 5,
+        "thread_num": 0,
+        "timeout_ms": 10,
+        "request_duration_each_iter_sec": 10,
         "max_iter_times": 50,
         "success_percent_th": 0.99,
         "qps_step_size_percent": 0.2
     },
     "test_response_time":{
-        "test_case_csv": "/data/test_case2.csv",
+        "test_case_csv": "/data/test_case.csv",
         "csv_reader_capacity": 1000,
-        "thread_num": 8,
+        "thread_num": 0,
         "timeout_ms": 100,
         "test_duration_sec": 10
     },
     "test_stability":{
-        "test_case_csv": "/data/test_case2.csv",
+        "test_case_csv": "/data/test_case.csv",
         "csv_reader_capacity": 1000,
-        "thread_num": 8,
+        "thread_num": 0,
         "load_percent": 0.6,
         "timeout_ms": 100,
         "test_duration_sec": 10

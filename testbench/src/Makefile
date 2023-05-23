@@ -19,6 +19,8 @@ SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
 CPPFLAGS += `pkg-config --cflags protobuf grpc`
 CXXFLAGS += -std=c++17
+CXXFLAGS += -O2 -g
+# CXXFLAGS += -fsanitize=address
 ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
@@ -33,7 +35,8 @@ LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
 		   -letcd-cpp-api\
 		   -lcpprest\
 		   -lboost_log\
-		   -O0\
+			-g\
+		   -O2\
            -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
            -ldl
 endif

@@ -24,6 +24,7 @@
 namespace logging = boost::log;
 
 #include "concurent_queue.h"
+#include "token_bucket.h"
 
 using grpc::Status;
 using grpc::ClientContext;
@@ -109,7 +110,6 @@ private:
     std::mutex summary_mutex_;
     std::condition_variable summary_cv_wait_;
 
-    double max_timesleep_ms_;
     SummaryData<T_Cusom_Summary> summary_data_;
     double total_latency_;
     boost::heap::priority_queue<double> pq_;
@@ -134,12 +134,17 @@ private:
         return true;
     }
 public:
-    GrpcBenchmark(std::vector<shared_ptr<GrpcClient<T_Req, T_Resp>>> clis, DoCompareFunc do_compare, int32_t threads_num=1, int64_t deadline_ms_=10, int32_t qps_limit=1000):
-            threads_(threads_num), cli_collection_(threads_num), collectors_(threads_num), enable_(true), pending_num_{0}, pending_compare_num_{0},
+    GrpcBenchmark(std::vector<shared_ptr<GrpcClient<T_Req, T_Resp>>> clis, DoCompareFunc do_compare, int64_t deadline_ms_=10, int32_t qps_limit=1000):
+            enable_(true), pending_num_{0}, pending_compare_num_{0},
             deadline_ms_{deadline_ms_},requests_(0, "bencharmk_requests"),responses_(0, "bencharmk_responses"),
             summary_data_{},total_latency_{},req_idx_{0} {
-        this->max_timesleep_ms_ = 1 * 1000/(qps_limit * 1.0 / threads_num);
-        BOOST_LOG_TRIVIAL(info) << " threads_num " << threads_num << " deadline_ms_ " << deadline_ms_ << " qps_limit " << qps_limit << " max_timesleep_ms " << this->max_timesleep_ms_;
+        int32_t threads_num = clis.size();
+        threads_.resize(threads_num);
+        cli_collection_.resize(threads_num);
+        collectors_.resize(threads_num);
+
+        auto qps_each_thread = qps_limit / threads_num;
+        BOOST_LOG_TRIVIAL(info) << " threads_num " << threads_num << " deadline_ms_ " << deadline_ms_ << " qps_limit " << qps_limit << " qps_each_thread " << qps_each_thread;
 
         if (clis.size() != threads_num) {
             BOOST_LOG_TRIVIAL(error) << " invalid clis num " << threads_num << " clis.size() " << clis.size();
@@ -152,10 +157,10 @@ public:
         }
 
         for (size_t i = 0; i < this->threads_.size(); ++i) {
-            threads_[i] = std::thread([this, i]() {
+            threads_[i] = std::thread([this, i, qps_each_thread]() {
                 auto collection = this->cli_collection_[i];
                 EachReqInternal<T_Req, T_Resp> each;
-                auto last_request = std::chrono::steady_clock::now();
+                TokenBucket tb(qps_each_thread, 1);
                 while (this->enable_.load()) {
                     auto status = collection->requests.WaitAndPop(each);
                     if(status == QueueStatus::Closed)
@@ -168,16 +173,8 @@ public:
                     auto* eachResp = new EachResp<T_Resp>{};
                     eachResp->id = each.id;
                     eachResp->ref_resp = each.ref_resp;
-                    auto req = std::chrono::steady_clock::now();
-                    auto duration = std::chrono::duration<double, std::milli>(req - last_request).count();
-                    auto sleep_ms = this->max_timesleep_ms_ - duration;
-                    if(sleep_ms > 0) {
-                        auto sleep_ns = static_cast<unsigned long long>(sleep_ms*1000*1000);
-                        sleepNanoseconds(sleep_ns);
-                    }
-                    last_request = std::chrono::steady_clock::now();
-
-                    eachResp->start_t = last_request;
+                    tb.consume(1);
+                    eachResp->start_t = std::chrono::steady_clock::now();
                     bool ok = collection->cli->Request(ctx, each.request, eachResp);
                     if (!ok) {
                         BOOST_LOG_TRIVIAL(warning) << "request failed ";
