@@ -30,9 +30,6 @@ using grpc::Status;
 using grpc::ClientContext;
 using std::shared_ptr;
 
-
-using grpc::CompletionQueue;
-
 void sleepNanoseconds(unsigned long long nanoseconds) {
     struct timespec sleepTime;
     sleepTime.tv_sec = nanoseconds / 1000000000;
@@ -199,6 +196,7 @@ public:
                     }
                     this->pending_compare_num_ ++;
                     this->responses_.Push(respout);
+                    delete eachResp;
                 }
             });
         }
@@ -243,7 +241,7 @@ public:
         }
     }
 
-    bool Request(uint64_t id, const T_Req& req, const T_Resp& ref_resp) {
+    bool Request(uint64_t id, const T_Req& req, const T_Ref& ref_resp) {
         this->pending_num_ ++;
         EachReqInternal internal {
             id,
