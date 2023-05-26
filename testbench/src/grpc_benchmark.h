@@ -87,8 +87,8 @@ private:
     std::vector<std::thread> threads_;
     std::vector<shared_ptr<GrpcClientCollection>> cli_collection_;
     
-    std::thread calculator_;
     std::vector<std::thread> collectors_;
+    std::vector<std::thread> calculators_;
 
     std::atomic<bool> enable_;
     std::atomic<int32_t> pending_num_;
@@ -123,7 +123,7 @@ private:
         return true;
     }
 public:
-    GrpcBenchmark(std::vector<shared_ptr<GrpcClient<T_Req, T_Resp>>> clis, DoCompareFunc do_compare, int64_t deadline_ms_=10, int32_t qps_limit=1000):
+    GrpcBenchmark(std::vector<shared_ptr<GrpcClient<T_Req, T_Resp>>> clis, DoCompareFunc do_compare, int64_t deadline_ms_=10, int32_t qps_limit=1000, int32_t calculator_num=2):
             enable_(true), pending_num_{0}, pending_compare_num_{0},
             deadline_ms_{deadline_ms_},requests_(0, "bencharmk_requests"),responses_(0, "bencharmk_responses"),
             summary_data_{},total_latency_{},req_idx_{0} {
@@ -131,6 +131,7 @@ public:
         threads_.resize(threads_num);
         cli_collection_.resize(threads_num);
         collectors_.resize(threads_num);
+        calculators_.resize(calculator_num);
 
         auto qps_each_thread = qps_limit / threads_num;
         BOOST_LOG_TRIVIAL(info) << " threads_num " << threads_num << " deadline_ms_ " << deadline_ms_ << " qps_limit " << qps_limit << " qps_each_thread " << qps_each_thread;
@@ -201,22 +202,24 @@ public:
             });
         }
 
-        this->calculator_ = std::thread([this, do_compare]() {
-            EachResp resp{};
-            while(this->responses_.WaitAndPop(resp) != QueueStatus::Closed) {
-                bool ok{true};
-                if (this->updateSummary(resp)) {
-                    ok = do_compare(resp.response, resp.ref_resp, this->summary_data_.custom_summary);
+        for(size_t i=0; i<calculators_.size(); i++) {
+            this->calculators_[i] = std::thread([this, do_compare]() {
+                EachResp resp{};
+                while(this->responses_.WaitAndPop(resp) != QueueStatus::Closed) {
+                    bool ok{true};
+                    if (this->updateSummary(resp)) {
+                        ok = do_compare(resp.response, resp.ref_resp, this->summary_data_.custom_summary);
+                    }
+                    this->pending_compare_num_ --;
+                    if (this->pending_compare_num_ <= 0) {
+                        this->summary_cv_wait_.notify_all();
+                    }
+                    if (!ok) {
+                        break;
+                    }
                 }
-                this->pending_compare_num_ --;
-                if (this->pending_compare_num_ <= 0) {
-                    this->summary_cv_wait_.notify_all();
-                }
-                if (!ok) {
-                    break;
-                }
-            }
-        });
+            });
+        }
     }
     GrpcBenchmark(const GrpcBenchmark&) = delete;
     GrpcBenchmark(GrpcBenchmark&&) = delete;
@@ -235,7 +238,9 @@ public:
         for (auto& thread : threads_) {
             thread.join();
         }
-        this->calculator_.join();
+        for (auto& calculator : calculators_) {
+            calculator.join();
+        }
         for (auto& collector : collectors_) {
             collector.join();
         }
