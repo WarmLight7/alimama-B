@@ -24,7 +24,7 @@ public:
         : capacity_{capacity}, closed_{false},tag_{tag} {
     }
 
-    QueueStatus Push(T& v) {
+    QueueStatus Push(const T& v) {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_push_.wait(lock, [this] {
             if (this->capacity_ == 0) {

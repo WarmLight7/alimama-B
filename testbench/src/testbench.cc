@@ -96,7 +96,7 @@ double TestResulCalcStat(std::vector<std::string> services, TestResultConfig& cf
     auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
-    SearchServiceGprcBenchmark::SummaryType summary{};
+    SearchServiceGprcBenchmark::SummaryData summary{};
     double qps_baseline {};
     BOOST_LOG_TRIVIAL(info) << std::endl  << "TestResultScore ";
     TestResultScore(services, reader, cfg, summary, qps_baseline);
