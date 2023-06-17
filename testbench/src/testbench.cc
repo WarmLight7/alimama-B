@@ -6,6 +6,7 @@
 #include <chrono>
 #include <algorithm>
 #include <unordered_map>
+#include <limits>
 
 #include <cmath>
 #include <etcd/Client.hpp>
@@ -23,6 +24,10 @@
 #include "defines.h"
 
 TestConfig g_config;
+
+bool isLess(double a, double b, double tolerance=std::numeric_limits<float>::epsilon()) {
+    return (!(std::abs(a - b) <= tolerance) && a < b);
+}
 
 std::vector<std::string> setupSearchService() {
   std::vector<std::string> services{};
@@ -105,15 +110,15 @@ bool TestResulCalcStat(std::vector<std::string> services, Statistic& stat) {
     reader.start();
 
     SearchServiceGprcBenchmark::SummaryData summary{};
-    BOOST_LOG_TRIVIAL(info) << "TestResultScore "  << std::endl;
+    BOOST_LOG_TRIVIAL(info) << "TestResultScore ";
     TestResultScore(services, reader, cfg, summary);
     reader.stop();
 
     auto& user_summary = summary.custom_summary;
-    auto avg_score = user_summary.total_score / user_summary.total_num;
+    double avg_score = user_summary.total_score / user_summary.total_num;
     stat.result_score = avg_score;
-    if (avg_score < g_config.result_cfg.final_score_th) {
-      BOOST_LOG_TRIVIAL(info) << "avg_score  " << avg_score << std::endl;
+    BOOST_LOG_TRIVIAL(info) << "result score:  " << avg_score;
+    if (isLess(avg_score, cfg.final_score_th)) {
       return false;
     }
     return true;
@@ -124,7 +129,7 @@ bool TestMaxQpsCalcStat(std::vector<std::string> services, Statistic& stat) {
     auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
-    BOOST_LOG_TRIVIAL(info) << "TestMaxQps "  << std::endl;
+    BOOST_LOG_TRIVIAL(info) << "TestMaxQps ";
     double max_qps = 0;
     auto summary = TestMaxQps(services, reader, cfg, max_qps);
     BOOST_LOG_TRIVIAL(info)  << "max_qps " << max_qps;
@@ -139,17 +144,20 @@ bool TestCapacityCalcStat(std::vector<std::string> services, Statistic& stat) {
     auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
-    BOOST_LOG_TRIVIAL(info) << "TestCapacityScore " << std::endl;
+    BOOST_LOG_TRIVIAL(info) << "TestCapacityScore ";
     auto summary = TestCapacityScore(services, reader, cfg);
     reader.stop();
-    if (summary.interupted || summary.success_request_percent < cfg.success_percent_th) {
+    stat.M = cfg.M;
+    if (summary.interupted || isLess(summary.success_request_percent, cfg.success_percent_th)) {
       stat.max_qps = 0;
       stat.capacity_score = 0;
+      BOOST_LOG_TRIVIAL(info) << "capacity score " << stat.capacity_score;
       return false;
     }
     stat.max_qps = summary.custom_summary.qps;
     stat.capacity_score = (100 * 2 * stat.max_qps) / (3 * cfg.M);
     if (stat.capacity_score > 100) stat.capacity_score = 100;
+    BOOST_LOG_TRIVIAL(info) << "capacity score " << stat.capacity_score;
     return true;
 }
 
@@ -159,18 +167,20 @@ bool TestResponseTimeCalcStat(std::vector<std::string> services, int32_t max_qps
     reader.start();
 
     cfg.max_qps = max_qps;
-    BOOST_LOG_TRIVIAL(info) << std::endl << "TestResponseTime ";
+    BOOST_LOG_TRIVIAL(info) << "TestResponseTime ";
     double qps = 0;
     auto summary = TestResponseTime(services, reader, cfg, qps);
-    if (summary.interupted || summary.success_request_percent < cfg.success_percent_th) {
+    reader.stop();
+    if (summary.interupted || isLess(summary.success_request_percent, cfg.success_percent_th)) {
       stat.response_time_score = 0;
+      BOOST_LOG_TRIVIAL(info)  << "qps " << qps << " max_qps " << max_qps << " response_time_score " << stat.response_time_score;
       return false;
     }
     stat.p99_latency_ms = summary.p99_latency_ms;
-    BOOST_LOG_TRIVIAL(info)  << "qps " << qps << " max_qps " << max_qps << " capacity_score " << stat.capacity_score;
-    stat.response_time_score = std::pow((cfg.timeout_ms - summary.p99_latency_ms), 2) / 100;
-
-    reader.stop();
+    stat.response_time_score = stat.p99_latency_ms < cfg.timeout_ms ?
+      std::pow((cfg.timeout_ms - summary.p99_latency_ms), 2) / 100 : 0;
+    BOOST_LOG_TRIVIAL(info) << "stat.p99_latency_ms " << stat.p99_latency_ms << " cfg.timeout_ms " << cfg.timeout_ms
+      << " qps " << qps << " max_qps " << max_qps << " response_time_score " << stat.response_time_score;
     return true;
 }
 
@@ -180,14 +190,16 @@ bool TestServiceStabilityCalcStat(std::vector<std::string> services, int32_t max
     reader.start();
 
     cfg.max_qps = max_qps;
-    BOOST_LOG_TRIVIAL(info) << std::endl << "TestServiceStabilityScore ";
+    BOOST_LOG_TRIVIAL(info) << "TestServiceStabilityScore ";
     auto summary = TestServiceStabilityScore(services, reader, cfg);
-    if (summary.interupted || summary.success_request_percent < cfg.success_percent_th) {
+    reader.stop();
+    if (summary.interupted || isLess(summary.success_request_percent, cfg.success_percent_th)) {
       stat.service_score = 0;
+      BOOST_LOG_TRIVIAL(info) << "service score " << stat.service_score;
       return false;
     }
     stat.service_score = 100;
-    reader.stop();
+    BOOST_LOG_TRIVIAL(info) << "service score " << stat.service_score;
     return true;
 }
 

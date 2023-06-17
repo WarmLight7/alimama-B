@@ -131,8 +131,7 @@ private:
         TokenBucket tb(qps_each_thread, 1);
         while (this->enable_.load()) {
             auto status = collection->requests.WaitAndPop(each);
-            if(status == QueueStatus::Closed)
-                break;
+            if(status == QueueStatus::Closed) break;
             
             auto ctx = std::make_shared<ClientContext>();
             gpr_timespec timeout = gpr_time_from_millis(this->deadline_ms_, GPR_TIMESPAN);
@@ -171,7 +170,7 @@ private:
                 this->cv_wait_.notify_all();
             }
             this->pending_compare_num_ ++;
-            this->responses_.Push(respout);
+            auto pushstat = this->responses_.Push(respout);
             delete eachResp;
         }
     }
@@ -193,7 +192,7 @@ private:
             }
             if (!ok) {
                 this->summary_data_.interupted = true;
-                break;
+                this->enable_.store(false);
             }
         }
     }

@@ -41,7 +41,7 @@
         "thread_num": 0,
         "timeout_ms": 100,
         "test_duration_sec": 10,
-        "success_percent_th": 0.99,
+        "success_percent_th": 1,
         "sample_percent_th": 0.01,
         "sample_score_th": 80
     },

@@ -39,6 +39,7 @@ void dump_summary(const SearchServiceGprcBenchmark::SummaryData& summary, double
   BOOST_LOG_TRIVIAL(info)  << "summary success_request_count " << summary.success_request_count;
   BOOST_LOG_TRIVIAL(info)  << "summary success_request_percent " << summary.success_request_percent;
   BOOST_LOG_TRIVIAL(info)  << "summary timeout_request_count " << summary.timeout_request_count;
+  BOOST_LOG_TRIVIAL(info)  << std::endl;
 }
 
 void TestResultScore(std::vector<std::string> services, TestCaseReader& reader,
