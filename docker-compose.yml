@@ -12,16 +12,16 @@ services:
 
   node1:
     container_name: alimama_2023_B_node-1
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
-    cpuset: "1"
+    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
+    cpuset: "1-16"
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 2G 
+          cpus: '16.0'
+          memory: 16G 
         reservations:
-          cpus: '1.0'
-          memory: 2G
+          cpus: '16.0'
+          memory: 16G
     networks:
       - alimama
     volumes:
@@ -29,26 +29,27 @@ services:
       - "./data:/data:ro"
     environment:
       - NODE_ID=1
+      - NODE_NUM=3
       - MEMORY=16G
-      - CPU=2C
+      - CPU=16C
 
     depends_on:
       - etcd
     working_dir: /work
-    command: ["bash", "./run.sh", "node-1"]
+    command: ["./run.sh"]
 
   node2:
     container_name: alimama_2023_B_node-2
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
-    cpuset: "2"
+    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
+    cpuset: "17-32"
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 2G 
+          cpus: '16.0'
+          memory: 16G 
         reservations:
-          cpus: '1.0'
-          memory: 2G
+          cpus: '16.0'
+          memory: 16G
     networks:
       - alimama
     volumes:
@@ -56,25 +57,26 @@ services:
       - "./data:/data:ro"
     environment:
       - NODE_ID=2
+      - NODE_NUM=3
       - MEMORY=16G
-      - CPU=2C
+      - CPU=16C
     depends_on:
       - etcd
     working_dir: /work/
-    command: ["bash", "./run.sh", "node-2"]
+    command: ["./run.sh"]
 
   node3:
     container_name: alimama_2023_B_node-3
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
-    cpuset: "3"
+    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
+    cpuset: "33-48"
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 2G 
+          cpus: '16.0'
+          memory: 16G 
         reservations:
-          cpus: '1.0'
-          memory: 2G
+          cpus: '16.0'
+          memory: 16G
     networks:
       - alimama
     volumes:
@@ -82,24 +84,25 @@ services:
       - "./data:/data:ro"
     environment:
       - NODE_ID=3
+      - NODE_NUM=3
       - MEMORY=16G
-      - CPU=2C
+      - CPU=16C
     depends_on:
       - etcd
     working_dir: /work/
-    command: ["bash", "./run.sh", "node-3"]
+    command: ["./run.sh"]
 
   testbench:
     container_name: alimama_2023_B_node-testbench
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
+    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
     deploy:
       resources:
         limits:
-          cpus: '8.0'
-          memory: 8G 
+          cpus: '16.0'
+          memory: 16G 
         reservations:
-          cpus: '8.0'
-          memory: 8G
+          cpus: '16.0'
+          memory: 16G
     networks:
       - alimama
     depends_on:
@@ -118,7 +121,7 @@ services:
 
   docker-proxy:
     container_name: alimama_2023_B_docker-proxy
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
+    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
     deploy:
       resources:
         limits:
@@ -139,7 +142,6 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
     working_dir: /work
     command: ["./docker-proxy", "-containers", "node-1,node-2,node-3"]
-
 
 networks:
   alimama:

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/heap/priority_queue.hpp>
 #include <boost/lockfree/queue.hpp>
 #include <thread>
 #include <vector>
@@ -8,7 +9,6 @@
 #include <condition_variable>
 #include <iostream>
 #include <memory>
-#include <boost/heap/priority_queue.hpp>
 #include <unistd.h>
 #include <time.h>
 
@@ -17,18 +17,15 @@
 #include <grpc/grpc.h>
 #include <grpc/support/time.h>
 
-#define BOOST_LOG_DYN_LINK 1
-#include <boost/log/core.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/expressions.hpp>
-namespace logging = boost::log;
-
 #include "concurent_queue.h"
 #include "token_bucket.h"
 
+#include "log.h"
+
+using std::shared_ptr;
 using grpc::Status;
 using grpc::ClientContext;
-using std::shared_ptr;
+using grpc::Channel;
 
 void sleepNanoseconds(unsigned long long nanoseconds) {
     struct timespec sleepTime;
@@ -50,6 +47,11 @@ public:
 template <typename T_Req, typename T_Resp, typename T_Cusom_Summary, typename T_Ref>
 class GrpcBenchmark {
 public:
+    class Comparator {
+    public:
+        virtual ~Comparator() {}
+        virtual bool compare(const T_Resp& resp, const T_Ref& ref, T_Cusom_Summary& result)  = 0;
+    };
     struct SummaryData {
         uint64_t completed_requests;
         uint64_t success_request_count;
@@ -58,6 +60,7 @@ public:
         uint64_t timeout_request_count;
         double avg_latency_ms;
         double p99_latency_ms;
+        bool interupted;
         T_Cusom_Summary custom_summary;
     };
     struct EachResp {
@@ -78,8 +81,9 @@ public:
         ConcurrentQueue<EachReqInternal> requests;
         ConcurrentQueue<EachResp> responses;
     };
-    using DoCompareFunc = std::function<bool(const T_Resp&, const T_Ref&, T_Cusom_Summary&)>;
+    using ComparatorPtr = std::shared_ptr<Comparator>;
 private:
+    ComparatorPtr comparator_;
     ConcurrentQueue<EachReqInternal> requests_;
     ConcurrentQueue<EachResp> responses_;
 
@@ -171,25 +175,33 @@ private:
             delete eachResp;
         }
     }
-    void calculateStatsWorker(DoCompareFunc do_compare) {
+    void calculateStatsWorker() {
         EachResp resp{};
+        int processed{};
         while(this->responses_.WaitAndPop(resp) != QueueStatus::Closed) {
+            processed++;
+            if (processed % 500 == 0) {
+                BOOST_LOG_TRIVIAL(trace) << "pending_compare_num_  " << this->pending_compare_num_.load() ;
+            }
             bool ok{true};
             if (this->updateSummary(resp)) {
-                ok = do_compare(resp.response, resp.ref_resp, this->summary_data_.custom_summary);
+                ok = comparator_->compare(resp.response, resp.ref_resp, this->summary_data_.custom_summary);
             }
             this->pending_compare_num_ --;
             if (this->pending_compare_num_ <= 0) {
                 this->summary_cv_wait_.notify_all();
             }
             if (!ok) {
+                this->summary_data_.interupted = true;
                 break;
             }
         }
     }
+
 public:
-    GrpcBenchmark(std::vector<shared_ptr<GrpcClient<T_Req, T_Resp>>> clis, DoCompareFunc do_compare, int64_t deadline_ms_=10, int32_t qps_limit=1000, int32_t calculator_num=2):
-            enable_(true), pending_num_{0}, pending_compare_num_{0},
+    GrpcBenchmark(std::vector<shared_ptr<GrpcClient<T_Req, T_Resp>>> clis, ComparatorPtr comparator,
+            int64_t deadline_ms_=10, int32_t qps_limit=1000, int32_t calculator_num=1):
+            comparator_{comparator}, enable_(true), pending_num_{0}, pending_compare_num_{0},
             deadline_ms_{deadline_ms_},requests_(0, "bencharmk_requests"),responses_(0, "bencharmk_responses"),
             summary_data_{},total_latency_{},req_idx_{0},latencies_{0} {
         int32_t threads_num = clis.size();
@@ -221,8 +233,8 @@ public:
             });
         }
         for(size_t i=0; i<calculators_.size(); i++) {
-            this->calculators_[i] = std::thread([this, do_compare]() {
-                this->calculateStatsWorker(do_compare);
+            this->calculators_[i] = std::thread([this]() {
+                this->calculateStatsWorker();
             });
         }
     }

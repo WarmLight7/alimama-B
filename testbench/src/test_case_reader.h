@@ -6,19 +6,10 @@
 #include <sstream>
 #include <vector>
 
-#define BOOST_LOG_DYN_LINK 1
-#include <boost/log/core.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/expressions.hpp>
-namespace logging = boost::log;
+#include "defines.h"
 
 #include "concurent_queue.h"
 #include "csv.h"
-
-#include "alimama.grpc.pb.h"
-
-using RequestPtr = std::shared_ptr<alimama::proto::Request>;
-using ResponsePtr = std::shared_ptr<alimama::proto::Response>;
 
 struct TestCasePair{
     bool repeat;

@@ -1,45 +1,20 @@
-#
-# Copyright 2015 gRPC authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
 CPPFLAGS += `pkg-config --cflags protobuf grpc`
 CXXFLAGS += -std=c++17
 CXXFLAGS += -O2 -g
-# CXXFLAGS += -fsanitize=address
-ifeq ($(SYSTEM),Darwin)
-LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
-           -pthread\
-		   -lboost_log\
-			-g\
-		   -fsanitize=address\
-           -lgrpc++_reflection\
-           -ldl
-else
-LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
-           -pthread\
+
+LDFLAGS += -L/usr/local/lib \
 		   -letcd-cpp-api\
 		   -lcpprest\
 		   -lboost_log\
-			-g\
-		   -O2\
-           -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
+		   -lssl\
+		   -lcrypto\
+		   -O2 -g\
+           -pthread\
+		   `pkg-config --libs --static protobuf grpc++`\
            -ldl
-endif
 PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
@@ -49,7 +24,7 @@ HEADER_FILES = $(wildcard *.h)
 
 vpath %.proto $(PROTOS_PATH)
 
-all: system-check testbench concurent_queue_bench
+all: testbench
 
 concurent_queue_bench: alimama.pb.o alimama.grpc.pb.o concurent_queue_bench.o
 	$(CXX) $^ $(LDFLAGS) -o $@

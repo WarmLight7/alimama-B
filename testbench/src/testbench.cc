@@ -16,37 +16,44 @@
 #include "test_case_reader.h"
 #include "test_case_reader_preload.h"
 #include "test_case_reader_async.h"
-#include "config.h"
 #include "test_search_service.h"
+#include "config.h"
 #include "alimama.grpc.pb.h"
 
-#define BOOST_LOG_DYN_LINK 1
-#include <boost/log/core.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/expressions.hpp>
-namespace logging = boost::log;
+#include "defines.h"
 
-using grpc::Channel;
-using grpc::ClientContext;
-using grpc::Status;
-
-
-using alimama::proto::SearchService;
-using StubsVector=std::vector<std::unique_ptr<SearchService::Stub>>;
+TestConfig g_config;
 
 std::vector<std::string> setupSearchService() {
   std::vector<std::string> services{};
-  etcd::Client etcd("http://etcd:2379");
-  std::string prefix = "/services/searchservice/";
-	etcd::Response response = etcd.keys(prefix).get();
-  if (response.is_ok()) {
-      BOOST_LOG_TRIVIAL(info) << "etcd connected successful.";
-  } else {
-      BOOST_LOG_TRIVIAL(info) <<  "etcd connected failed: " << response.error_message();
-      return services;
+  etcd::SyncClient etcd("http://etcd:2379");
+  const std::string kPublicEndpoint = "/services/searchservice";
+
+  bool found {false};
+  std::string server_address {};
+
+  std::chrono::seconds timeout(g_config.loading_time_sec_timeout);
+  std::chrono::seconds interval(5);
+  std::chrono::time_point<std::chrono::system_clock> start = std::chrono::system_clock::now();
+
+  // wait until timeout
+  while (std::chrono::system_clock::now() - start < timeout) {
+    auto resp = etcd.get(kPublicEndpoint);
+    if (!resp.is_ok()) {
+      BOOST_LOG_TRIVIAL(info) << "get key fail. key: " << kPublicEndpoint << ", err: " << resp.error_message();
+      std::this_thread::sleep_for(interval);
+      continue;
+    }
+    found = true;
+    server_address = resp.value().as_string();
+    break;
   }
-  for (size_t i = 0; i < response.keys().size(); i++) {
-    std::string server_address = std::string(response.key(i)).substr(prefix.size());
+  if (!found) return services;
+  std::chrono::time_point<std::chrono::system_clock> end = std::chrono::system_clock::now();
+  std::chrono::duration<double> diff = end - start;
+  BOOST_LOG_TRIVIAL(info) << "etcd connected successful. use " << diff.count() << " second";
+
+  for (size_t i = 0; i < 1; i++) {
     BOOST_LOG_TRIVIAL(info)  << "found server_address " << server_address;
     services.push_back(server_address);
   }
@@ -60,12 +67,12 @@ void Command(std::string command) {
 
 struct Statistic { //用于最后评分的统计信息
   double result_score; // （结果正确性得分项）判分规则：ad集合全部正确加50分，相对顺序正确加30分，扣费（bid_prices）加20分； 备注：随机抽样判定500个请求即可以，验证期间超时时间设定为500ms；
-  double response_time_score; // （响应时间得分项）判分规则：假设P99响应时间为T（ms），本项得分= （100-T)^2 / 100，超过100ms不得分;  备注：在上述最大吞吐条件下，同时此处的100ms根据主办方baseline实际给出
+  double max_qps;
   double capacity_score;  // （最大吞吐得分项）判分规则：假设最大吞吐为Xqps（最大超时时间100ms下超时率<0.1%），本项得分= 100*2X/3M，其中M为benchark的QPS数，超过1.5倍的M，则得分100；
+  double p99_latency_ms;
+  double response_time_score; // （响应时间得分项）判分规则：假设P99响应时间为T（ms），本项得分= （100-T)^2 / 100，超过100ms不得分;  备注：在上述最大吞吐条件下，同时此处的100ms根据主办方baseline实际给出
   double service_score; //（服务稳定性得分项）判分规则：以交付系统最大服务容量的60%压力（包括rainy case）压测5分钟，服务出现异常得0分，正常服务得100分；
   double final_score; // 评分逻辑：Score= 0.5 * ResultScore +  0.2 * ResponseTimeScore + 0.2 * CapacityScore + 0.1 * ServiceScore 
-  double p99_latency_ms;
-  double max_qps;
   double M = 1000; // M为benchark的QPS数
 };
 
@@ -91,79 +98,97 @@ void DumpStats(Statistic& stat) {
   BOOST_LOG_TRIVIAL(info)  << "得分情况：: " << j.dump();
 }
 
-double TestResulCalcStat(std::vector<std::string> services, TestResultConfig& cfg, Statistic& stat) {
+bool TestResulCalcStat(std::vector<std::string> services, Statistic& stat) {
     BOOST_LOG_TRIVIAL(trace)  << "reader start ";
-    auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
-    reader.start();
-
-    SearchServiceGprcBenchmark::SummaryData summary{};
-    double qps_baseline {};
-    BOOST_LOG_TRIVIAL(info) << std::endl  << "TestResultScore ";
-    TestResultScore(services, reader, cfg, summary, qps_baseline);
-    BOOST_LOG_TRIVIAL(info)  << "qps_baseline " << qps_baseline;
-    auto& user_summary = summary.custom_summary;
-    if (user_summary.ad_correct_num == user_summary.total_num) {
-      stat.result_score += 80;
-    } else if (user_summary.ad_partial_correct_num == summary.custom_summary.total_num) {
-      stat.result_score += 50;
-    } else if ((user_summary.ad_partial_correct_num + user_summary.ad_correct_num) == user_summary.total_num) {
-      stat.result_score += 50;
-    }
-    if (user_summary.price_correct_num == user_summary.total_num) {
-      stat.result_score += 20;
-    }
-    reader.stop();
-    return qps_baseline;
-}
-
-double TestMaxQpsCalcStat(std::vector<std::string> services, TestMaxQpsConfig& cfg, int32_t qps_baseline, Statistic& stat) {
+    auto& cfg = g_config.result_cfg;
     auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
-    cfg.qps_baseline = qps_baseline;
-    BOOST_LOG_TRIVIAL(info) << std::endl  << "TestMaxQps ";
+    SearchServiceGprcBenchmark::SummaryData summary{};
+    BOOST_LOG_TRIVIAL(info) << "TestResultScore "  << std::endl;
+    TestResultScore(services, reader, cfg, summary);
+    reader.stop();
+
+    auto& user_summary = summary.custom_summary;
+    auto avg_score = user_summary.total_score / user_summary.total_num;
+    stat.result_score = avg_score;
+    if (avg_score < g_config.result_cfg.final_score_th) {
+      BOOST_LOG_TRIVIAL(info) << "avg_score  " << avg_score << std::endl;
+      return false;
+    }
+    return true;
+}
+
+bool TestMaxQpsCalcStat(std::vector<std::string> services, Statistic& stat) {
+    auto& cfg = g_config.max_qps_cfg;
+    auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
+    reader.start();
+
+    BOOST_LOG_TRIVIAL(info) << "TestMaxQps "  << std::endl;
     double max_qps = 0;
     auto summary = TestMaxQps(services, reader, cfg, max_qps);
     BOOST_LOG_TRIVIAL(info)  << "max_qps " << max_qps;
     stat.max_qps = max_qps;
     
     reader.stop();
-    return max_qps;
+    return true;
 }
 
-void TestServiceStabilityCalcStat(std::vector<std::string> services, TestStabilityConfig& cfg, int32_t max_qps, Statistic& stat) {
-    auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
+bool TestCapacityCalcStat(std::vector<std::string> services, Statistic& stat) {
+    auto& cfg = g_config.capacity_cfg;
+    auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
-    cfg.max_qps = max_qps;
-    BOOST_LOG_TRIVIAL(info) << std::endl << "TestServiceStabilityScore ";
-    auto summary = TestServiceStabilityScore(services, reader, cfg);
-    if (summary.completed_requests == summary.success_request_count) {
-      stat.service_score = 100;
-    } else {
-      stat.service_score = 0;
-    }
+    BOOST_LOG_TRIVIAL(info) << "TestCapacityScore " << std::endl;
+    auto summary = TestCapacityScore(services, reader, cfg);
     reader.stop();
+    if (summary.interupted || summary.success_request_percent < cfg.success_percent_th) {
+      stat.max_qps = 0;
+      stat.capacity_score = 0;
+      return false;
+    }
+    stat.max_qps = summary.custom_summary.qps;
+    stat.capacity_score = (100 * 2 * stat.max_qps) / (3 * cfg.M);
+    if (stat.capacity_score > 100) stat.capacity_score = 100;
+    return true;
 }
 
-void TestResponseTimeCalcStat(std::vector<std::string> services, TestResponseTimeConfig& cfg, int32_t max_qps, Statistic& stat) {
-    auto reader = TestCaseReaderAsync(cfg.test_case_csv, cfg.csv_reader_capacity);
+bool TestResponseTimeCalcStat(std::vector<std::string> services, int32_t max_qps, Statistic& stat) {
+    auto& cfg = g_config.response_time_cfg;
+    auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
     reader.start();
 
     cfg.max_qps = max_qps;
     BOOST_LOG_TRIVIAL(info) << std::endl << "TestResponseTime ";
     double qps = 0;
     auto summary = TestResponseTime(services, reader, cfg, qps);
-    if (summary.success_request_percent < 0.99) {
+    if (summary.interupted || summary.success_request_percent < cfg.success_percent_th) {
       stat.response_time_score = 0;
-    } else {
-      stat.response_time_score = std::pow((cfg.timeout_ms - summary.p99_latency_ms), 2) / 100;
-      stat.p99_latency_ms = summary.p99_latency_ms;
-      stat.capacity_score = 100 * 2 * qps / 3 * max_qps;
-      BOOST_LOG_TRIVIAL(info)  << "qps " << qps << " max_qps " << max_qps << stat.capacity_score;
+      return false;
     }
+    stat.p99_latency_ms = summary.p99_latency_ms;
+    BOOST_LOG_TRIVIAL(info)  << "qps " << qps << " max_qps " << max_qps << " capacity_score " << stat.capacity_score;
+    stat.response_time_score = std::pow((cfg.timeout_ms - summary.p99_latency_ms), 2) / 100;
 
     reader.stop();
+    return true;
+}
+
+bool TestServiceStabilityCalcStat(std::vector<std::string> services, int32_t max_qps, Statistic& stat) {
+    auto& cfg = g_config.stability_cfg;
+    auto reader = TestCaseReaderPreload(cfg.test_case_csv, cfg.csv_reader_capacity);
+    reader.start();
+
+    cfg.max_qps = max_qps;
+    BOOST_LOG_TRIVIAL(info) << std::endl << "TestServiceStabilityScore ";
+    auto summary = TestServiceStabilityScore(services, reader, cfg);
+    if (summary.interupted || summary.success_request_percent < cfg.success_percent_th) {
+      stat.service_score = 0;
+      return false;
+    }
+    stat.service_score = 100;
+    reader.stop();
+    return true;
 }
 
 bool CheckStubs(StubsVector& stubs) {
@@ -179,19 +204,16 @@ bool CheckStubs(StubsVector& stubs) {
   return true;
 }
 
-const std::string kConfigFilePath("config.json");
 void TestAll(Statistic& stat) {
+  BOOST_LOG_TRIVIAL(trace)  << "setup service";
   auto services = setupSearchService();
-  TestResultConfig test_result_cfg {};
-  TestMaxQpsConfig test_max_qps_cfg {};
-  TestStabilityConfig test_stability_cfg {};
-  TestResponseTimeConfig test_response_time_cfg {};
-  ReadConfigFromFile(kConfigFilePath, test_result_cfg, test_max_qps_cfg, test_stability_cfg, test_response_time_cfg);
-  auto qps_baseline = TestResulCalcStat(services, test_result_cfg, stat);
-  auto max_qps = TestMaxQpsCalcStat(services, test_max_qps_cfg, qps_baseline, stat);
-  TestResponseTimeCalcStat(services, test_response_time_cfg, max_qps, stat);
-  TestServiceStabilityCalcStat(services, test_stability_cfg, max_qps, stat);
-  stat.final_score = 0.5 * stat.result_score + 0.2 * stat.response_time_score + 0.2 * stat.capacity_score + 0.1 * stat.service_score;
+  if (services.size() == 0) return;
+
+  if (!TestResulCalcStat(services, stat)) return;
+  // if (!TestMaxQpsCalcStat(services, stat)) return;
+  if (!TestCapacityCalcStat(services, stat)) return;
+  if (!TestResponseTimeCalcStat(services, stat.max_qps, stat)) return;
+  if (!TestServiceStabilityCalcStat(services, stat.max_qps, stat)) return;
 }
 
 void init_logging() {
@@ -200,11 +222,16 @@ void init_logging() {
 
 int main(int argc, char** argv) {
   init_logging();
-  BOOST_LOG_TRIVIAL(trace)  << "setup service";
+
+  const std::string kConfigFilePath("config.json");
+  bool ok = ReadConfigFromFile(kConfigFilePath, g_config);
+  if (!ok) {
+    return -1;
+  }
 
   Statistic stat{};
   TestAll(stat);
-
+  stat.final_score = 0.5 * stat.result_score + 0.2 * stat.response_time_score + 0.2 * stat.capacity_score + 0.1 * stat.service_score;
   DumpStats(stat);
   return 0;
 }
