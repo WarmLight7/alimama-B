@@ -37,7 +37,7 @@ public:
     TestCaseReaderAsync& operator=(TestCaseReaderAsync&&) = delete;
     ~TestCaseReaderAsync() override {
     }
-    void start() override {
+    void Start() override {
         this->reloadfile();
 
         for (size_t i = 0; i < this->threads_.size(); ++i) {
@@ -45,7 +45,7 @@ public:
                 while(true) {
                     RequestPtr request = std::make_shared<alimama::proto::Request>();
                     ResponsePtr response = std::make_shared<alimama::proto::Response>();
-                    this->read_next_row(request, response);
+                    this->ReadNextRow(request, response);
                     this->read_num_ ++;
                     BOOST_LOG_TRIVIAL(trace) << "reapeat_ " << this->reapeat_ << " read_num_: " << this->read_num_;
 
@@ -59,7 +59,7 @@ public:
         }
     }
 
-    void read_next_row(RequestPtr& request, ResponsePtr& response) {
+    void ReadNextRow(RequestPtr& request, ResponsePtr& response) {
         std::string keywords, context_vector;
         uint64_t hour, topn;
         std::string adgroup_ids, prices;
@@ -70,23 +70,23 @@ public:
             this->reader_->read_row(keywords, context_vector, hour, topn, adgroup_ids, prices);
         }
 
-        for (auto keyword : parseUint64List(keywords)) {
+        for (auto keyword : ParseUint64List(keywords)) {
             request->add_keywords(keyword);
         }
-        for (auto vec : parseFloatList(context_vector)) {
+        for (auto vec : ParseFloatList(context_vector)) {
             request->add_context_vector(vec);
         }
         request->set_hour(hour);
         request->set_topn(topn);
-        for (auto id : parseUint64List(adgroup_ids)) {
+        for (auto id : ParseUint64List(adgroup_ids)) {
             response->add_adgroup_ids(id);
         }
-        for (auto price : parseUint64List(prices)) {
+        for (auto price : ParseUint64List(prices)) {
             response->add_prices(price);
         }
     }
 
-    void stop() override {
+    void Stop() override {
         this->enable_.store(false);
         this->testcase_.Close();
         for (size_t i = 0; i < this->threads_.size(); ++i) {
@@ -94,7 +94,7 @@ public:
         }
     }
 
-    bool pop(TestCasePair& pair) override {
+    bool Pop(TestCasePair& pair) override {
         if (this->testcase_.WaitAndPop(pair) == QueueStatus::Closed) {
             return false;
         }

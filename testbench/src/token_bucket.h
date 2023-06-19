@@ -15,7 +15,7 @@ public:
       last_consume_time_ = std::chrono::steady_clock::now();
     }
 
-    bool consume(uint64_t tokens) {
+    bool Consume(uint64_t tokens) {
         if (!enable_) {
           return true;
         }

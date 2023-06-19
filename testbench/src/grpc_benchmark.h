@@ -50,7 +50,7 @@ public:
     class Comparator {
     public:
         virtual ~Comparator() {}
-        virtual bool compare(const T_Resp& resp, const T_Ref& ref, T_Cusom_Summary& result)  = 0;
+        virtual bool Compare(const T_Resp& resp, const T_Ref& ref, T_Cusom_Summary& result)  = 0;
     };
     struct SummaryData {
         uint64_t completed_requests;
@@ -140,7 +140,7 @@ private:
             auto* eachResp = new EachResp{};
             eachResp->id = each.id;
             eachResp->ref_resp = each.ref_resp;
-            tb.consume(1);
+            tb.Consume(1);
             eachResp->start_t = std::chrono::steady_clock::now();
             bool ok = collection->cli->Request(ctx, each.request, eachResp);
             if (!ok) {
@@ -184,7 +184,7 @@ private:
             }
             bool ok{true};
             if (this->updateSummary(resp)) {
-                ok = comparator_->compare(resp.response, resp.ref_resp, this->summary_data_.custom_summary);
+                ok = comparator_->Compare(resp.response, resp.ref_resp, this->summary_data_.custom_summary);
             }
             this->pending_compare_num_ --;
             if (this->pending_compare_num_ <= 0) {

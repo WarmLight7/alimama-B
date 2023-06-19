@@ -11,7 +11,7 @@
 
 constexpr int32_t kSampleStepSize {100};
 
-void randomSelect(float percent, std::array<bool, kSampleStepSize> &select) {
+void RandomSelect(float percent, std::array<bool, kSampleStepSize> &select) {
     std::random_device rd;
     std::mt19937 g(rd());
 
@@ -28,20 +28,20 @@ void randomSelect(float percent, std::array<bool, kSampleStepSize> &select) {
 
 class SearchServiceComparatorDummy : public SearchServiceGprcBenchmark::Comparator {
 public:
-    bool compare(const ResponsePtr& resp, const ResponsePtr& ref, CustomSummary& result) override {
+    bool Compare(const ResponsePtr& resp, const ResponsePtr& ref, CustomSummary& result) override {
         return true;
     }
 };
 
 class SearchServiceComparatorSample : public SearchServiceGprcBenchmark::Comparator {
 public:
-    SearchServiceComparatorSample(double sample_percent_th, int32_t sample_score_th):
+    SearchServiceComparatorSample(double sample_percent_th, int32_t sample_score_th, bool auto_interrupt=false):
         sample_percent_th_{sample_percent_th}, sample_score_th_{sample_score_th},
-        random_select_{}, index_{0} {
-        randomSelect(sample_percent_th_, random_select_);
+        random_select_{}, index_{0}, auto_interrupt_{auto_interrupt} {
+        RandomSelect(sample_percent_th_, random_select_);
     }
 
-    bool compare(const ResponsePtr& resp, const ResponsePtr& ref, CustomSummary& result) override {
+    bool Compare(const ResponsePtr& resp, const ResponsePtr& ref, CustomSummary& result) override {
         auto idx_cur = index_.fetch_add(1);
         size_t idx = idx_cur % kSampleStepSize;
         if (random_select_.at(idx) == false) {
@@ -55,8 +55,6 @@ public:
             BOOST_LOG_TRIVIAL(error)  << "ref is null ";
             return false;
         }
-        // Check adgroup_ids
-        // 要求集合正确性超过阈值
         if (ref->adgroup_ids().size() == 0) {
             BOOST_LOG_TRIVIAL(error)  << "reference adgroup_ids is empty ";
             return false;
@@ -64,7 +62,7 @@ public:
 
         int32_t score {0};
         do {
-            int32_t topNCheckNum = static_cast<int32_t>(std::ceil(g_config.result_cfg.accuracy_th * ref->adgroup_ids().size()));
+            int32_t topNCheckNum = static_cast<int32_t>(std::ceil(g_config.accuracy_th * ref->adgroup_ids().size()));
             if (resp->adgroup_ids().size() < topNCheckNum) { // 集合数量不一致
                 break;
             };
@@ -95,10 +93,11 @@ public:
         } while(0);
         result.total_num ++;
         result.total_score += score;
-        return score >= sample_score_th_;
+        return (score >= sample_score_th_) || !auto_interrupt_;
     }
 
 private:
+    bool auto_interrupt_;
     double sample_percent_th_;
     int32_t sample_score_th_;
     std::array<bool, 100> random_select_;
@@ -107,7 +106,7 @@ private:
 
 class SearchServiceComparatorAll : public SearchServiceGprcBenchmark::Comparator {
 public:
-    bool compare(const ResponsePtr& resp, const ResponsePtr& ref, CustomSummary& result) override {
+    bool Compare(const ResponsePtr& resp, const ResponsePtr& ref, CustomSummary& result) override {
         if (!resp) {
             BOOST_LOG_TRIVIAL(error)  << "resp is null ";
             return false;
@@ -124,7 +123,7 @@ public:
         }
         result.total_num ++;
 
-        int32_t topNCheckNum = static_cast<int32_t>(std::ceil(g_config.result_cfg.accuracy_th * ref->adgroup_ids().size()));
+        int32_t topNCheckNum = static_cast<int32_t>(std::ceil(g_config.accuracy_th * ref->adgroup_ids().size()));
         if (resp->adgroup_ids().size() < topNCheckNum) { // 集合数量不一致
             return true;
         };

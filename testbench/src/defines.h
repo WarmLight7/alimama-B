@@ -7,6 +7,10 @@
 
 #include "alimama.grpc.pb.h"
 
+#include "log.h"
+#include "config.h"
+#include "grpc_benchmark.h"
+
 using grpc::Status;
 using grpc::ClientContext;
 using grpc::Channel;
@@ -19,13 +23,6 @@ using alimama::proto::SearchService;
 using alimama::proto::Request;
 using alimama::proto::Response;
 
-#define BOOST_LOG_DYN_LINK 1
-#include <boost/log/core.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/expressions.hpp>
-namespace logging = boost::log;
-
-#include "config.h"
 extern TestConfig g_config;
 
 struct CustomSummary{
@@ -36,8 +33,6 @@ struct CustomSummary{
   int32_t ad_partial_correct_num; // 集合正确，顺序不正确
   int32_t price_correct_num; // 价格正确
 };
-
-#include "grpc_benchmark.h"
 
 using StubsVector=std::vector<std::unique_ptr<SearchService::Stub>>;
 using SearchServiceGprcBenchmark = GrpcBenchmark<RequestPtr, ResponsePtr, CustomSummary, ResponsePtr>;

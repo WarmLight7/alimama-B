@@ -20,12 +20,12 @@ struct TestCasePair{
 class TestCaseReader{
 public:
     virtual ~TestCaseReader() {};
-    virtual void start() = 0;
-    virtual void stop() = 0;
-    virtual bool pop(TestCasePair& pair) = 0;
+    virtual void Start() = 0;
+    virtual void Stop() = 0;
+    virtual bool Pop(TestCasePair& pair) = 0;
 };
 
-std::vector<uint64_t> parseUint64List(const std::string& s) {
+std::vector<uint64_t> ParseUint64List(const std::string& s) {
     std::vector<uint64_t> result;
     std::istringstream ss(s);
     std::string item;
@@ -35,7 +35,7 @@ std::vector<uint64_t> parseUint64List(const std::string& s) {
     return result;
 }
 
-std::vector<float> parseFloatList(const std::string& s) {
+std::vector<float> ParseFloatList(const std::string& s) {
     std::vector<float> result;
     std::istringstream ss(s);
     std::string item;

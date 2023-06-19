@@ -7,74 +7,73 @@
 
 using json = nlohmann::json;
 
-constexpr int32_t kThreadNum = 20;
-
 struct TestResultConfig {
   std::string test_case_csv;
-  int32_t csv_reader_capacity = 1000;
-  int32_t thread_num = kThreadNum;
-  int32_t timeout_ms = 500;
-  int32_t sample_num = 500;
-  int32_t qps_limit = 0;
-  double accuracy_th = 1.0;
-  int32_t final_score_th = 80;
+  int32_t csv_reader_capacity;
+  int32_t thread_num;
+  int32_t timeout_ms;
+  int32_t sample_num;
+  int32_t qps_limit;
+  int32_t final_score_th;
 }; 
 
 struct TestMaxQpsConfig {
   std::string test_case_csv;
-  int32_t csv_reader_capacity = 1000;
-  int32_t qps_baseline = 0;
-  int32_t thread_num = kThreadNum;
-  int32_t timeout_ms = 500;
-  int32_t request_duration_each_iter_sec = 5;
-  int32_t max_iter_times = 5;
-  double sample_percent_th = 0.99;
-  double success_percent_th = 0.99;
-  int32_t sample_score_th = 80;
-  double qps_step_size_percent = 0.1;
+  int32_t csv_reader_capacity;
+  int32_t qps_upper;
+  int32_t qps_baseline;
+  int32_t qps_step0;
+  int32_t qps_step1;
+  int32_t thread_num;
+  int32_t timeout_ms;
+  int32_t request_duration_each_iter_sec;
+  double sample_percent_th;
+  double success_percent_th;
+  int32_t sample_score_th;
 }; 
 
 struct TestCapacityConfig {
   std::string test_case_csv;
-  int32_t csv_reader_capacity = 1000;
-  int32_t thread_num = 6;
-  int32_t timeout_ms = 30;
-  int32_t sample_num = 5000;
-  int32_t test_duration_sec = 5*60;
-  double  success_percent_th = 0.99;
-  double  sample_percent_th = 0.99;
-  int32_t sample_score_th = 80;
-  int32_t M = 20000;
+  int32_t csv_reader_capacity;
+  int32_t thread_num;
+  int32_t timeout_ms;
+  int32_t sample_num;
+  int32_t test_duration_sec;
+  double  success_percent_th;
+  double  sample_percent_th;
+  int32_t sample_score_th;
+  int32_t M;
 };
 
 struct TestResponseTimeConfig {
   std::string test_case_csv;
-  int32_t csv_reader_capacity = 1000;
-  int32_t thread_num = kThreadNum;
-  int32_t timeout_ms = 500;
-  int32_t test_duration_sec = 5*60;
-  int32_t max_qps = 0;
-  double  success_percent_th = 0.99;
-  double  sample_percent_th = 0.99;
-  int32_t sample_score_th = 80;
+  int32_t csv_reader_capacity;
+  int32_t thread_num;
+  int32_t timeout_ms;
+  int32_t test_duration_sec;
+  int32_t qps_limit;
+  double  success_percent_th;
+  double  sample_percent_th;
+  int32_t sample_score_th;
 };
 
 struct TestStabilityConfig {
   std::string test_case_csv;
-  int32_t csv_reader_capacity = 1000;
-  int32_t thread_num = kThreadNum;
-  int32_t max_qps = 0;
-  double load_percent = 0.6;
-  int32_t timeout_ms = 500;
-  int32_t test_duration_sec = 5*60;
-  double  success_percent_th = 0.99;
-  double  sample_percent_th = 0.99;
-  int32_t sample_score_th = 80;
+  int32_t csv_reader_capacity;
+  int32_t thread_num;
+  int32_t max_qps;
+  double load_percent;
+  int32_t timeout_ms;
+  int32_t test_duration_sec;
+  double  success_percent_th;
+  double  sample_percent_th;
+  int32_t sample_score_th;
 };
 
 
 struct TestConfig {
   int32_t loading_time_sec_timeout;
+  double  accuracy_th;
   TestResultConfig result_cfg;
   TestMaxQpsConfig max_qps_cfg;
   TestCapacityConfig capacity_cfg;
@@ -89,7 +88,6 @@ void FromJson(const json& j, TestResultConfig& p) {
     p.sample_num = j.at("sample_num").get<int32_t>();
     p.test_case_csv = j.at("test_case_csv").get<std::string>();
     p.csv_reader_capacity = j.at("csv_reader_capacity").get<int32_t>();
-    p.accuracy_th = j.at("accuracy_th").get<double>();
     p.final_score_th = j.at("final_score_th").get<int32_t>();
 }
 
@@ -109,13 +107,14 @@ void FromJson(const json& j, TestCapacityConfig& p) {
 void FromJson(const json& j, TestMaxQpsConfig& p) {
     p.thread_num = j.at("thread_num").get<int32_t>();
     p.timeout_ms = j.at("timeout_ms").get<int32_t>();
+    p.qps_upper = j.at("qps_upper").get<int32_t>();
     p.qps_baseline = j.at("qps_baseline").get<int32_t>();
+    p.qps_step0 = j.at("qps_step0").get<int32_t>();
+    p.qps_step1 = j.at("qps_step1").get<int32_t>();
     p.request_duration_each_iter_sec = j.at("request_duration_each_iter_sec").get<int32_t>();
-    p.max_iter_times = j.at("max_iter_times").get<int32_t>();
     p.sample_percent_th = j.at("sample_percent_th").get<double>();
     p.success_percent_th = j.at("success_percent_th").get<double>();
     p.sample_score_th = j.at("sample_score_th").get<int32_t>();
-    p.qps_step_size_percent = j.at("qps_step_size_percent").get<double>();
     p.test_case_csv = j.at("test_case_csv").get<std::string>();
     p.csv_reader_capacity = j.at("csv_reader_capacity").get<int32_t>();
 }
@@ -129,6 +128,7 @@ void FromJson(const json& j, TestResponseTimeConfig& p) {
     p.sample_percent_th = j.at("sample_percent_th").get<double>();
     p.success_percent_th = j.at("success_percent_th").get<double>();
     p.sample_score_th = j.at("sample_score_th").get<int32_t>();
+    p.qps_limit = j.at("qps_limit").get<int32_t>();
 }
 
 void FromJson(const json& j, TestStabilityConfig& p) {
@@ -195,5 +195,6 @@ bool ReadConfigFromFile(const std::string& filename, TestConfig& config) {
     }
 
     config.loading_time_sec_timeout = j.at("loading_time_sec_timeout").get<int32_t>();
+    config.accuracy_th = j.at("accuracy_th").get<double>();
     return true;
 }

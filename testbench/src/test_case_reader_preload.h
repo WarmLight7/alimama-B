@@ -35,12 +35,12 @@ public:
     TestCaseReaderPreload& operator=(TestCaseReaderPreload&&) = delete;
     virtual ~TestCaseReaderPreload() {
     }
-    void start() override {
+    void Start() override {
         this->reloadfile();
         while(true) {
             RequestPtr request = std::make_shared<alimama::proto::Request>();
             ResponsePtr response = std::make_shared<alimama::proto::Response>();
-            auto ok =this->read_next_row(request, response);
+            auto ok =this->ReadNextRow(request, response);
             if (!ok) {
                 break;
             }
@@ -50,7 +50,7 @@ public:
         }
     }
 
-    bool read_next_row(RequestPtr& request, ResponsePtr& response) {
+    bool ReadNextRow(RequestPtr& request, ResponsePtr& response) {
         std::string keywords, context_vector;
         uint64_t hour, topn;
         std::string adgroup_ids, prices;
@@ -59,27 +59,27 @@ public:
             return false;
         }
 
-        for (auto keyword : parseUint64List(keywords)) {
+        for (auto keyword : ParseUint64List(keywords)) {
             request->add_keywords(keyword);
         }
-        for (auto vec : parseFloatList(context_vector)) {
+        for (auto vec : ParseFloatList(context_vector)) {
             request->add_context_vector(vec);
         }
         request->set_hour(hour);
         request->set_topn(topn);
-        for (auto id : parseUint64List(adgroup_ids)) {
+        for (auto id : ParseUint64List(adgroup_ids)) {
             response->add_adgroup_ids(id);
         }
-        for (auto price : parseUint64List(prices)) {
+        for (auto price : ParseUint64List(prices)) {
             response->add_prices(price);
         }
         return true;
     }
 
-    void stop() override {
+    void Stop() override {
     }
 
-    bool pop(TestCasePair& pair) override {
+    bool Pop(TestCasePair& pair) override {
         BOOST_LOG_TRIVIAL(trace) << "read_num_ " << this->read_num_ << " this->testcase_.size(): " << this->testcase_.size();
         if (this->read_num_ >= this->testcase_.size()) {
             this->read_num_ = 0;
