@@ -13,15 +13,14 @@ services:
   node1:
     container_name: node-1
     image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
-    cpuset: "1-16"
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 16G 
+          cpus: '1'
+          memory: 1G 
         reservations:
-          cpus: '16.0'
-          memory: 16G
+          cpus: '1'
+          memory: 1G 
     networks:
       - alimama
     volumes:
@@ -42,15 +41,14 @@ services:
   node2:
     container_name: node-2
     image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
-    cpuset: "17-32"
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 16G 
+          cpus: '1'
+          memory: 1G 
         reservations:
-          cpus: '16.0'
-          memory: 16G
+          cpus: '1'
+          memory: 1G 
     networks:
       - alimama
     volumes:
@@ -70,15 +68,14 @@ services:
   node3:
     container_name: node-3
     image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
-    cpuset: "33-48"
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 16G 
+          cpus: '1'
+          memory: 1G 
         reservations:
-          cpus: '16.0'
-          memory: 16G
+          cpus: '1'
+          memory: 1G 
     networks:
       - alimama
     volumes:
@@ -101,11 +98,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 16G 
+          cpus: '1'
+          memory: 1G 
         reservations:
-          cpus: '16.0'
-          memory: 16G
+          cpus: '1'
+          memory: 1G 
     networks:
       - alimama
     depends_on:

@@ -11,3 +11,6 @@ code.tar.gz
 *.pb.h
 node-testbench/demo_grpc/greeter_client
 docker-proxy/logs
+testbench/testbenchResult.json
+testbench/src/testbench
+code/alimama/demo_alimama_search_service
