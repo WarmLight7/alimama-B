@@ -28,6 +28,7 @@
 #include "search_service_comparator.h"
 
 #include "defines.h"
+#include "utils.h"
 #include "timer.h"
 
 void DumpSummary(const SearchServiceGprcBenchmark::SummaryData& summary) {
@@ -92,12 +93,16 @@ SearchServiceGprcBenchmark::SummaryData TestMaxQps(std::vector<std::string> serv
       auto clis = SearchServiceGprcClient::CreateClients(services, int32_t(qps_limit));
       if (clis.size() == 0) return valid_summary;
 
-      auto comparator = std::make_shared<SearchServiceComparatorDummy>();
+      auto comparator = std::make_shared<SearchServiceComparatorSample>(cfg.sample_percent_th, cfg.sample_score_th);
       auto bench = std::make_shared<SearchServiceGprcBenchmark>(clis, comparator, cfg.timeout_ms, int32_t(qps_limit));
       int64_t request_times = qps_limit * cfg.request_duration_each_iter_sec;
 
       auto summary = RunBenchmark(bench, reader, request_times, cfg.request_duration_each_iter_sec);
-      if (summary.success_request_percent < cfg.success_percent_th) {
+
+      auto& user_summary = summary.custom_summary;
+      double avg_score = user_summary.total_score / user_summary.total_num;
+
+      if (summary.success_request_percent < cfg.success_percent_th || IsLess(avg_score, cfg.success_percent_th)) {
         qps_max = qps_limit;
         qps_limit = qps_max - step;
         break;
@@ -134,7 +139,7 @@ SearchServiceGprcBenchmark::SummaryData TestResponseTime(std::vector<std::string
   auto clis = SearchServiceGprcClient::CreateClients(services, cfg.qps_limit);
   if (clis.size() == 0) return {};
 
-  auto comparator = std::make_shared<SearchServiceComparatorDummy>();
+  auto comparator = std::make_shared<SearchServiceComparatorSample>(cfg.sample_percent_th, cfg.sample_score_th);
   auto bench = std::make_shared<SearchServiceGprcBenchmark>(clis, comparator, cfg.timeout_ms, cfg.qps_limit);
   
   int32_t req_times = cfg.qps_limit * cfg.test_duration_sec;

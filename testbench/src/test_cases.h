@@ -9,6 +9,7 @@
 #include <limits>
 
 #include "defines.h"
+#include "utils.h"
 
 #include "test_case_reader.h"
 #include "test_case_reader_async.h"
@@ -27,9 +28,6 @@ struct Statistic { //用于最后评分的统计信息
   double timeout_percent; // 当判题异常停止时，输出超时比例
 };
 
-bool IsLess(double a, double b, double tolerance=std::numeric_limits<float>::epsilon()) {
-    return (!(std::abs(a - b) <= tolerance) && a < b);
-}
 
 bool TestResulCalcStat(std::vector<std::string> services, Statistic& stat) {
     BOOST_LOG_TRIVIAL(trace)  << "reader start ";

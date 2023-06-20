@@ -74,6 +74,15 @@
         "ranges": "cpp",
         "valarray": "cpp",
         "*.ipp": "cpp",
-        "*.inc": "cpp"
+        "*.inc": "cpp",
+        "csetjmp": "cpp",
+        "strstream": "cpp",
+        "cfenv": "cpp",
+        "coroutine": "cpp",
+        "regex": "cpp",
+        "source_location": "cpp",
+        "future": "cpp",
+        "scoped_allocator": "cpp",
+        "shared_mutex": "cpp"
     }
 }
