@@ -1,4 +1,6 @@
-build/
+/build/
+/backup/
+/judge_log/
 node-1/
 node-2/
 node-3/

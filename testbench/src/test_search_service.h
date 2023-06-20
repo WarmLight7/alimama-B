@@ -115,6 +115,8 @@ SearchServiceGprcBenchmark::SummaryData TestMaxQps(std::vector<std::string> serv
 
   auto summary1 = doBatchBench(cfg.qps_step1);
   DumpSummary(summary1);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
   if (summary1.success_request_percent < cfg.success_percent_th) return summary0;
   return summary1;
 }

@@ -42,7 +42,6 @@ struct TestCapacityConfig {
   double  success_percent_th;
   double  sample_percent_th;
   int32_t sample_score_th;
-  int32_t M;
 };
 
 struct TestResponseTimeConfig {
@@ -74,6 +73,7 @@ struct TestStabilityConfig {
 struct TestConfig {
   int32_t loading_time_sec_timeout;
   double  accuracy_th;
+  int32_t M;
   TestResultConfig result_cfg;
   TestMaxQpsConfig max_qps_cfg;
   TestCapacityConfig capacity_cfg;
@@ -101,7 +101,6 @@ void FromJson(const json& j, TestCapacityConfig& p) {
     p.sample_percent_th = j.at("sample_percent_th").get<double>();
     p.success_percent_th = j.at("success_percent_th").get<double>();
     p.sample_score_th = j.at("sample_score_th").get<int32_t>();
-    p.M = j.at("M").get<int32_t>();
 }
 
 void FromJson(const json& j, TestMaxQpsConfig& p) {
@@ -196,5 +195,6 @@ bool ReadConfigFromFile(const std::string& filename, TestConfig& config) {
 
     config.loading_time_sec_timeout = j.at("loading_time_sec_timeout").get<int32_t>();
     config.accuracy_th = j.at("accuracy_th").get<double>();
+    config.M = j.at("M").get<int32_t>();
     return true;
 }

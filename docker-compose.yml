@@ -3,7 +3,7 @@ version: '2'
 
 services:
   etcd:
-    container_name: alimama_2023_B_etcd
+    container_name: etcd
     image: docker.io/bitnami/etcd:3.5
     networks:
       - alimama
@@ -11,7 +11,7 @@ services:
       - ALLOW_NONE_AUTHENTICATION=yes
 
   node1:
-    container_name: alimama_2023_B_node-1
+    container_name: node-1
     image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
     cpuset: "1-16"
     deploy:
@@ -35,11 +35,12 @@ services:
 
     depends_on:
       - etcd
+      - testbench
     working_dir: /work
     command: ["./run.sh"]
 
   node2:
-    container_name: alimama_2023_B_node-2
+    container_name: node-2
     image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
     cpuset: "17-32"
     deploy:
@@ -62,11 +63,12 @@ services:
       - CPU=16C
     depends_on:
       - etcd
+      - testbench
     working_dir: /work/
     command: ["./run.sh"]
 
   node3:
-    container_name: alimama_2023_B_node-3
+    container_name: node-3
     image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
     cpuset: "33-48"
     deploy:
@@ -89,11 +91,12 @@ services:
       - CPU=16C
     depends_on:
       - etcd
+      - testbench
     working_dir: /work/
     command: ["./run.sh"]
 
   testbench:
-    container_name: alimama_2023_B_node-testbench
+    container_name: node-testbench
     image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
     deploy:
       resources:
@@ -107,42 +110,11 @@ services:
       - alimama
     depends_on:
       - etcd
-      - node1
-      - node2
-      - node3
-    links:
-      - docker-proxy #可以通过 http 和 grpc 获取各个节点的 cpu 和内存，start 和 stop 节点，接口未实现；可以先看 cpu 和内存的日志
     volumes:
       - "./testbench:/work"
       - "./data:/data:ro"
-      - "./docker-proxy/logs:/logs/docker-proxy"
     working_dir: /work
     command: ["bash", "./run.sh"]
-
-  docker-proxy:
-    container_name: alimama_2023_B_docker-proxy
-    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 2G 
-        reservations:
-          cpus: '1.0'
-          memory: 2G
-    networks:
-      - alimama
-    depends_on:
-      - etcd
-      - node1
-      - node2
-      - node3
-    volumes:
-      - "./docker-proxy:/work"
-      - "/var/run/docker.sock:/var/run/docker.sock"
-    working_dir: /work
-    command: ["./docker-proxy", "-containers", "node-1,node-2,node-3"]
-
 networks:
   alimama:
     name: alimama_2023_B_alimama

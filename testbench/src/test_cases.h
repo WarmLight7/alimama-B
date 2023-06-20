@@ -59,12 +59,25 @@ bool TestMaxQpsCalcStat(std::vector<std::string> services, Statistic& stat) {
 
     BOOST_LOG_TRIVIAL(info) << "TestMaxQps ";
     auto summary = TestMaxQps(services, reader, cfg);
-    stat.max_qps = summary.custom_summary.qps;
+    auto& custom_summary = summary.custom_summary;
+
+    stat.max_qps = custom_summary.qps;
     BOOST_LOG_TRIVIAL(info)  << "max_qps " << stat.max_qps;
     stat.timeout_percent = summary.timeout_request_count * 1.0 / summary.completed_requests;
-    stat.capacity_score = (100 * 2 * stat.max_qps) / (3 * g_config.capacity_cfg.M);
+    if (summary.interupted || IsLess(summary.success_request_percent, cfg.success_percent_th)) {
+      stat.max_qps = 0;
+      BOOST_LOG_TRIVIAL(info) << "capacity score " << stat.capacity_score;
+      return false;
+    }
+    double avg_score = custom_summary.total_score / custom_summary.total_num;
+    if (IsLess(avg_score, cfg.sample_score_th)) {
+      return false;
+    }
+
+    stat.M = g_config.M;
+    stat.capacity_score = (100 * 2 * stat.max_qps) / (3 * g_config.M);
     if (stat.capacity_score > 100) stat.capacity_score = 100;
-    BOOST_LOG_TRIVIAL(info) << "capacity score (via test max qps) " << stat.capacity_score;
+    BOOST_LOG_TRIVIAL(info) << "capacity score" << stat.capacity_score;
 
     reader.Stop();
     return true;
@@ -78,7 +91,7 @@ bool TestCapacityCalcStat(std::vector<std::string> services, Statistic& stat) {
     BOOST_LOG_TRIVIAL(info) << "TestCapacityScore ";
     auto summary = TestCapacityScore(services, reader, cfg);
     reader.Stop();
-    stat.M = cfg.M;
+    stat.M = g_config.M;
     stat.capacity_score = 0;
     stat.timeout_percent = summary.timeout_request_count * 1.0 / summary.completed_requests;
     if (summary.interupted || IsLess(summary.success_request_percent, cfg.success_percent_th)) {
@@ -93,7 +106,7 @@ bool TestCapacityCalcStat(std::vector<std::string> services, Statistic& stat) {
     }
 
     stat.max_qps = custom_summary.qps;
-    stat.capacity_score = (100 * 2 * stat.max_qps) / (3 * cfg.M);
+    stat.capacity_score = (100 * 2 * stat.max_qps) / (3 * g_config.M);
     if (stat.capacity_score > 100) stat.capacity_score = 100;
     BOOST_LOG_TRIVIAL(info) << "capacity score " << stat.capacity_score;
     return true;
@@ -118,14 +131,14 @@ bool TestResponseTimeCalcStat(std::vector<std::string> services, Statistic& stat
 
     auto qps = custom_summary.qps;
     if (summary.interupted || IsLess(summary.success_request_percent, cfg.success_percent_th)) {
-      BOOST_LOG_TRIVIAL(info)  << "qps " << qps << " max_qps " << max_qps << " response_time_score " << stat.response_time_score;
+      BOOST_LOG_TRIVIAL(info)  << "qps " << qps << " response_time_score " << stat.response_time_score;
       return false;
     }
     stat.p99_latency_ms = summary.p99_latency_ms;
     stat.response_time_score = stat.p99_latency_ms < cfg.timeout_ms ?
       std::pow((cfg.timeout_ms - summary.p99_latency_ms), 2) / 100 : 0;
     BOOST_LOG_TRIVIAL(info) << "stat.p99_latency_ms " << stat.p99_latency_ms << " cfg.timeout_ms " << cfg.timeout_ms
-      << " qps " << qps << " max_qps " << max_qps << " response_time_score " << stat.response_time_score;
+      << " qps " << qps << " response_time_score " << stat.response_time_score;
     return true;
 }
 
