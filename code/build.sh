@@ -1,2 +1,2 @@
 #!/bin/bash
-cd src && make clean && make all
+cd alimama && make clean && make all

@@ -4,19 +4,23 @@ SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
 CPPFLAGS += `pkg-config --cflags protobuf grpc`
 CXXFLAGS += -std=c++17
+CXXFLAGS += -O2 -g
 ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
            -pthread\
            -lgrpc++_reflection\
            -ldl 
 else
-LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
+LDFLAGS += -L/usr/local/lib \
+		   -letcd-cpp-api\
+		   -lcpprest\
+		   -lboost_log\
+		   -lssl\
+		   -lcrypto\
+		   -O2 -g\
            -pthread\
-		   -O2\
-		   -fsanitize=address -fno-omit-frame-pointer\
-           -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
+		   `pkg-config --libs --static protobuf grpc++`\
            -ldl
-LDFLAGS += -lpthread -letcd-cpp-api -lprotobuf -lgrpc++ -lgrpc -lz -lcpprest -lssl -lcrypto -lboost_system -I/usr/local/include/etcd/proto/
 endif
 PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
