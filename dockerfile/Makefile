@@ -1,5 +1,5 @@
-IMAGE := public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-base
-IMAGEV0 := public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
+IMAGE := public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-base
+IMAGEV0 := public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
 
 HAS_BUILDX = $(shell docker buildx > /dev/null 2>&1 && echo true || echo false)
 BUILD = build
