@@ -14,3 +14,4 @@ docker-proxy/logs
 testbench/testbenchResult.json
 testbench/src/testbench
 code/alimama/demo_alimama_search_service
+logs/
