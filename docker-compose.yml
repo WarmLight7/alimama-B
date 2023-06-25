@@ -12,16 +12,16 @@ services:
 
   node1:
     container_name: node-1
-    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
     cpuset: "1-16"
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 16G 
+          cpus: '1.0'
+          memory: 1G 
         reservations:
-          cpus: '16.0'
-          memory: 16G
+          cpus: '1.0'
+          memory: 1G
     networks:
       - alimama
     volumes:
@@ -30,8 +30,8 @@ services:
     environment:
       - NODE_ID=1
       - NODE_NUM=3
-      - MEMORY=16G
-      - CPU=16C
+      - MEMORY=1G
+      - CPU=1C
 
     depends_on:
       - etcd
@@ -41,16 +41,15 @@ services:
 
   node2:
     container_name: node-2
-    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
-    cpuset: "17-32"
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 16G 
+          cpus: '1.0'
+          memory: 1G 
         reservations:
-          cpus: '16.0'
-          memory: 16G
+          cpus: '1.0'
+          memory: 1G
     networks:
       - alimama
     volumes:
@@ -59,8 +58,8 @@ services:
     environment:
       - NODE_ID=2
       - NODE_NUM=3
-      - MEMORY=16G
-      - CPU=16C
+      - MEMORY=1G
+      - CPU=1C
     depends_on:
       - etcd
       - testbench
@@ -69,16 +68,15 @@ services:
 
   node3:
     container_name: node-3
-    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
-    cpuset: "33-48"
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 16G 
+          cpus: '1.0'
+          memory: 1G 
         reservations:
-          cpus: '16.0'
-          memory: 16G
+          cpus: '1.0'
+          memory: 1G
     networks:
       - alimama
     volumes:
@@ -87,8 +85,8 @@ services:
     environment:
       - NODE_ID=3
       - NODE_NUM=3
-      - MEMORY=16G
-      - CPU=16C
+      - MEMORY=1G
+      - CPU=1C
     depends_on:
       - etcd
       - testbench
@@ -97,15 +95,15 @@ services:
 
   testbench:
     container_name: node-testbench
-    image: public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
     deploy:
       resources:
         limits:
-          cpus: '16.0'
-          memory: 64G 
+          cpus: '1.0'
+          memory: 2G 
         reservations:
-          cpus: '16.0'
-          memory: 64G
+          cpus: '1.0'
+          memory: 2G
     networks:
       - alimama
     depends_on:
