@@ -36,7 +36,7 @@ RUN cd etcd-cpp-apiv3; \
   make -j60 && make install
 
 
-FROM public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-base
+FROM public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-base
 
 COPY --from=build /usr/ /usr/
 RUN ldconfig

@@ -1,16 +1,11 @@
-IMAGE = public-images-registry.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:v0
+IMAGE = public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
 CPPFLAGS += `pkg-config --cflags protobuf grpc`
 CXXFLAGS += -std=c++17
 CXXFLAGS += -O2 -g
-ifeq ($(SYSTEM),Darwin)
-LDFLAGS += -L/usr/local/lib `pkg-config --libs protobuf grpc++`\
-           -pthread\
-           -lgrpc++_reflection\
-           -ldl 
-else
+
 LDFLAGS += -L/usr/local/lib \
 		   -letcd-cpp-api\
 		   -lcpprest\
@@ -21,7 +16,6 @@ LDFLAGS += -L/usr/local/lib \
            -pthread\
 		   `pkg-config --libs --static protobuf grpc++`\
            -ldl
-endif
 PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
