@@ -1,13 +1,14 @@
-IMAGE := alimama-max-code-2023
+IMAGE := public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-base
+IMAGEV0 := public-images-registry-vpc.cn-hangzhou.cr.aliyuncs.com/demo/alimama-2023:B-v0
 
 HAS_BUILDX = $(shell docker buildx > /dev/null 2>&1 && echo true || echo false)
 BUILD = build
 ifeq ($(HAS_BUILDX),true)
-#  BUILD = buildx build --platform linux/amd64
+  BUILD = buildx build --platform linux/arm64,linux/amd64
 endif
 
 base:
-	docker $(BUILD) -t $(IMAGE):base - < Dockerfile_base
+	docker $(BUILD) --progress=plain --push  -t $(IMAGE) - < Dockerfile_base
 
 init:
 	@rm -rf code
@@ -20,5 +21,5 @@ init:
 
 v0:
 	@cp Dockerfile_v0 ./code/
-	DOCKER_BUILDKIT=0 docker $(BUILD) -t $(IMAGE):v0 -f ./code/Dockerfile_v0 ./code
+	DOCKER_BUILDKIT=0 docker $(BUILD) --progress=plain --push  -t $(IMAGEV0) -f ./code/Dockerfile_v0 ./
 	@rm ./code/Dockerfile_v0
