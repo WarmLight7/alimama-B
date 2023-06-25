@@ -81,8 +81,9 @@ void DumpStats(Statistic& stat) {
   j["extras"]["p99_latency_ms"] = stat.p99_latency_ms;
   j["extras"]["max_qps"] = stat.max_qps;
   j["extras"]["M"] = stat.M;
-  j["score"] = j["extras"]["score"]  = stat.final_score;
-  j["score"] = j["extras"]["last_timeout_percent"]  = stat.timeout_percent;
+  j["extras"]["score"]  = stat.final_score;
+  j["extras"]["last_timeout_percent"]  = stat.timeout_percent;
+  j["score"] = stat.final_score;
   std::ofstream of("./testbenchResult.json", std::ios::out);
   of << j.dump();
   of.close();
