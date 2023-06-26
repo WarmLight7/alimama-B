@@ -1,0 +1,40 @@
+#!/bin/bash
+
+docker start node-1
+
+
+docker exec -it node-1 bash
+
+cd demo_grpc_helloworld/ && make && ./greeter_server
+
+etcdctl del --prefix ""
+
+etcdctl get --prefix /
+
+
+## 合并远程的master到main
+git fetch origin
+git checkout main
+git merge origin/master
+git push origin main
+git push origin --delete master
+
+
+
+## 本地编写master版本提交
+git fetch origin
+git branch
+git branch -d master
+git checkout master
+git merge origin/main
+
+git remote add master origin
+git push origin master
+
+
+
+
+
+git add code/demo_grpc_helloworld/greeter_server.cc
+git commit -m "提交c测试"
+git push
