@@ -63,20 +63,8 @@ private:
     std::map<int, int> adgroup2price;
     std::map<int, int> adgroup2timings;  //使用2^24次存储 用int就够 
 public:
-    GreeterServiceImpl() {
-        
-    }
-  Status Search(ServerContext* context, const Request* request, Response* response) override {
-    // 作为示例，我们只是简单地返回一些假数据。
-    // 假设我们找到了两个广告单元
-    response->add_adgroup_ids(12345);
-    response->add_adgroup_ids(67890);
-
-    // 对应的价格
-    response->add_prices(100);
-    response->add_prices(200);
-    return Status::OK;
-  }
+    
+  
   //转换判断类型
     int timings2int(vector<int>& timings, int status){
         int timing = 0;
@@ -158,13 +146,28 @@ public:
         file.close();
     }
     
-
-
     void readCsv(const std::string& path){
         int start_row = 0;  // 起始行
         int end_row = 20;  
         read_csv_rows(path, start_row, end_row);
     }
+
+    GreeterServiceImpl() {
+        readCsv("/data/raw_data.csv");
+    }
+
+    Status Search(ServerContext* context, const Request* request, Response* response) override {
+    // 作为示例，我们只是简单地返回一些假数据。
+    // 假设我们找到了两个广告单元
+    response->add_adgroup_ids(12345);
+    response->add_adgroup_ids(67890);
+
+    // 对应的价格
+    response->add_prices(100);
+    response->add_prices(200);
+    return Status::OK;
+  }
+  
 };
 
 void RunServer() {
