@@ -21,7 +21,7 @@ alimama挑战赛复赛
 
 ## 数据存储格式：
 
-| keywrod(uint64) | adgroup_id(uint64) | price(uint64) | status(int8) |
+| keyword(uint64) | adgroup_id(uint64) | price(uint64) | status(int8) |
 | --------------- | ------------------ | ------------- | ------------ |
 | 2916200016      | 644960096148       | 63885         | 1            |
 
@@ -64,9 +64,11 @@ topn个response：
   - 存储格式为：
 
   - ```C++
-    vector<set<int>> keywordAdgroupSet;
-    map<int, int> adgroup2price;
-    map<int, pair<float, float>> adgroup2vector; 
+    std::map<int, int> keywordID;
+    std::map<int, int> adgroupID;
+    std::vector<std::set<int>> keywordAdgroupSet;
+    std::vector<std::map<int, pair<float, float>>> adgroup2vector; 
+    std::map<int, int> adgroup2price;
     map<int, int> adgroup2campaign; //后续优化掉或者好像可以直接不用存 不需要 聊天记录里面说了每个单元只会有一个计划
     map<int, int> adgroup2timings;  //使用2^24次存储 用int就够 
     ```
