@@ -115,7 +115,6 @@ public:
             keywordID[keyword] = keywordID.size();
         }
         keyword = keywordID[keyword];
-
         uint64_t adgroup;
         std::getline(ss, token, delimiter);
         adgroup = std::stoull(token);
@@ -123,7 +122,13 @@ public:
             adgroupID[adgroup] = adgroupID.size();
         }
         adgroup = adgroupID[adgroup];
-        keywordAdgroupSet[keyword].insert(adgroup);
+        if(keywordAdgroupSet.size() > keyword){
+            keywordAdgroupSet[keyword].insert(adgroup);
+        }
+        else{
+            keywordAdgroupSet.emplace_back(std::set<uint32_t>{});
+            keywordAdgroupSet[keyword].insert(adgroup);
+        }
 
         uint32_t price;
         std::getline(ss, token, delimiter);
@@ -140,8 +145,13 @@ public:
 
         std::getline(ss, token, delimiter);
         std::pair<float, float> itemVector = split2float(token);
-        keywordAdgroup2vector[keyword][adgroup] = itemVector;
-
+        if(keywordAdgroup2vector.size() > keyword){
+            keywordAdgroup2vector[keyword][adgroup] = itemVector;
+        }
+        else{
+            keywordAdgroup2vector.emplace_back(std::map<uint32_t, std::pair<float, float> >{});
+            keywordAdgroup2vector[keyword][adgroup] = itemVector;
+        }
         std::getline(ss, token, delimiter);
         std::getline(ss, token, delimiter);
     }
@@ -150,6 +160,7 @@ public:
         std::ifstream file(csv_file);
         std::string line;
         int row_num = 0;
+        std::cout << row_num << " " << start_row << " " << end_row << std::endl;
         while (std::getline(file, line) && row_num < end_row) {
             if (row_num >= start_row) {
                 processeline(line, '\t');
@@ -203,7 +214,7 @@ public:
     }
     SearchServiceImpl() {
         std::cout << "开始读取csv" << std::endl;
-        readCsv("./data/raw_data.csv");
+        readCsv("/data/raw_data.csv");
         std::cout << "读取csv成功" << std::endl;
         printPrivate();
     }
