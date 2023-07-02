@@ -56,18 +56,18 @@ std::string getLocalIP() {
 
 class SearchServiceImpl final : public SearchService::Service {
 private:
-    std::map<int, int> keywordID;
-    std::map<int, int> adgroupID;
-    std::vector<std::set<int>> keywordAdgroupSet;
-    std::vector<std::map<int, pair<float, float>>> keywordAdgroup2vector; 
-    std::map<int, int> adgroup2price;
-    std::map<int, int> adgroup2timings;  //使用2^24次存储 用int就够 
+    std::map<uint64_t, uint32_t> keywordID;
+    std::map<uint64_t, uint32_t> adgroupID;
+    std::vector<std::set<uint32_t>> keywordAdgroupSet;
+    std::vector<std::map<uint32_t, pair<float, float>>> keywordAdgroup2vector; 
+    std::map<uint32_t, uint32_t> adgroup2price;
+    std::map<uint32_t, uint32_t> adgroup2timings;  //使用2^24次存储 用int就够 
 public:
     
   
   //转换判断类型
-    int timings2int(vector<int>& timings, int status){
-        int timing = 0;
+    uint32_t timings2int(vector<uint8_t>& timings, uint8_t status){
+        uint32_t timing = 0;
         for (int i = binaryArray.size()-1; i >= 0; i--) {
             timing = (result << 1) | !(timings[i]^status);
         }
@@ -82,10 +82,10 @@ public:
     }
 
     //csv读取
-    std::vector<int> split2int(const std::string& str, char delimiter) {
-        std::vector<int> tokens;
+    std::vector<uint8_t> split2int(const std::string& str, char delimiter) {
+        std::vector<uint8_t> tokens;
         std::stringstream ss(str);
-        int token;
+        uint8_t token;
         while (std::getline(ss, token, delimiter)) {
             tokens.push_back(token);
         }
@@ -130,7 +130,7 @@ public:
         uint8_t status;
         std::getline(ss, status, delimiter);
         std::getline(ss, token, delimiter);
-        std::vector<int> timings = split2int(token, ',');
+        std::vector<uint8_t> timings = split2int(token, ',');
         uint32_t timing = timings2int(timings, status);
         adgroup2timings[adgroup] = timing;
 

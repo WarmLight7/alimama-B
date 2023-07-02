@@ -64,13 +64,13 @@ topn个response：
   - 存储格式为：
 
   - ```C++
-    std::map<int, int> keywordID;
-    std::map<int, int> adgroupID;
-    std::vector<std::set<int>> keywordAdgroupSet;
-    std::vector<std::map<int, pair<float, float>>> adgroup2vector; 
-    std::map<int, int> adgroup2price;
-    map<int, int> adgroup2campaign; //后续优化掉或者好像可以直接不用存 不需要 聊天记录里面说了每个单元只会有一个计划
-    map<int, int> adgroup2timings;  //使用2^24次存储 用int就够 
+    std::map<uint64_t, uint32_t> keywordID;
+    std::map<uint64_t, uint32_t> adgroupID;
+    std::vector<std::set<uint32_t>> keywordAdgroupSet;
+    std::vector<std::map<uint32_t, pair<float, float>>> keywordAdgroup2vector; 
+    std::map<uint32_t, uint32_t> adgroup2price;
+    std::map<uint32_t, uint64_t> adgroup2campaign; //后续优化掉或者好像可以直接不用存 不需要 聊天记录里面说了每个单元只会有一个计划
+    std::map<uint32_t, uint32_t> adgroup2timings;  //使用2^24次存储 用int就够 
     ```
 
     
