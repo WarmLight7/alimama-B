@@ -100,37 +100,46 @@ public:
         return result;
     }
     void processeline(const std::string& str, char delimiter) {
-        std::vector<std::string> tokens;
+        
         std::stringstream ss(str);
         std::string token;
-        while (std::getline(ss, token, delimiter)) {
-            tokens.push_back(token);
-        }
+        // std::vector<std::string> tokens;
+        // while (std::getline(ss, token, delimiter)) {
+        //     tokens.push_back(token);
+        // }
 
-        int keyword = std::stoi(tokens[0]);
+        uint64_t keyword;
+        std::getline(ss, keyword, delimiter);
         if (keywordID.find(keyword) == keywordID.end()) {
             keywordID[keyword] = keywordID.size();
         }
         keyword = keywordID[keyword];
 
-        int adgroup = std::stoi(tokens[1]);
+        uint64_t adgroup;
+        std::getline(ss, adgroup, delimiter);
         if (adgroupID.find(adgroup) == adgroupID.end()) {
             adgroupID[adgroup] = adgroupID.size();
         }
         adgroup = adgroupID[adgroup];
         keywordAdgroupSet[keyword].insert(adgroup);
 
-        int price = std::stoi(tokens[2]);
+        uint32_t price;
+        std::getline(ss, price, delimiter);
         adgroup2price[adgroup] = price;
 
-        int status = std::stoi(tokens[3]);
-        std::vector<int> timings = split2int(tokens[4], ',');
-
-        int timing = timings2int(timings, status);
+        uint8_t status;
+        std::getline(ss, status, delimiter);
+        std::getline(ss, token, delimiter);
+        std::vector<int> timings = split2int(token, ',');
+        uint32_t timing = timings2int(timings, status);
         adgroup2timings[adgroup] = timing;
 
-        std::pair<float, float> itemVector = split2float(token[5]);
+        std::getline(ss, token, delimiter);
+        std::pair<float, float> itemVector = split2float(token);
         keywordAdgroup2vector[keyword][adgroup] = itemVector;
+
+        std::getline(ss, token, delimiter);
+        std::getline(ss, token, delimiter);
     }
 
     std::vector<std::vector<std::string>> read_csv_rows(const std::string& csv_file, int start_row, int end_row) {
@@ -167,7 +176,7 @@ public:
     response->add_prices(200);
     return Status::OK;
   }
-  
+
 };
 
 void RunServer() {
