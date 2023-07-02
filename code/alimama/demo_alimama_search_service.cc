@@ -59,24 +59,24 @@ private:
     std::map<uint64_t, uint32_t> keywordID;
     std::map<uint64_t, uint32_t> adgroupID;
     std::vector<std::set<uint32_t>> keywordAdgroupSet;
-    std::vector<std::map<uint32_t, pair<float, float>>> keywordAdgroup2vector; 
+    std::vector<std::map<uint32_t, std::pair<float, float> > > keywordAdgroup2vector; 
     std::map<uint32_t, uint32_t> adgroup2price;
     std::map<uint32_t, uint32_t> adgroup2timings;  //使用2^24次存储 用int就够 
 public:
     
   
   //转换判断类型
-    uint32_t timings2int(vector<uint8_t>& timings, uint8_t status){
+    uint32_t timings2int(std::vector<uint8_t>& timings, uint8_t status){
         uint32_t timing = 0;
-        for (int i = binaryArray.size()-1; i >= 0; i--) {
-            timing = (result << 1) | !(timings[i]^status);
+        for (int i = timings.size()-1; i >= 0; i--) {
+            timing = (timing << 1) | !(timings[i]^status);
         }
         return timing;
     }
     int hours2int(int hour){
         return 1 << (hour-1);
     }
-    bool checkHours(int timing, int hour){
+    bool checkHours(uint32_t timing, int hour){
         hour = 1 << (hour-1);
         return (timing & hour) != 0;
     }
@@ -85,9 +85,9 @@ public:
     std::vector<uint8_t> split2int(const std::string& str, char delimiter) {
         std::vector<uint8_t> tokens;
         std::stringstream ss(str);
-        uint8_t token;
+        std::string token;
         while (std::getline(ss, token, delimiter)) {
-            tokens.push_back(token);
+            tokens.push_back(std::stoi(token));
         }
         return tokens;
     }
@@ -109,14 +109,16 @@ public:
         // }
 
         uint64_t keyword;
-        std::getline(ss, keyword, delimiter);
+        std::getline(ss, token, delimiter);
+        keyword = std::stoull(token);
         if (keywordID.find(keyword) == keywordID.end()) {
             keywordID[keyword] = keywordID.size();
         }
         keyword = keywordID[keyword];
 
         uint64_t adgroup;
-        std::getline(ss, adgroup, delimiter);
+        std::getline(ss, token, delimiter);
+        adgroup = std::stoull(token);
         if (adgroupID.find(adgroup) == adgroupID.end()) {
             adgroupID[adgroup] = adgroupID.size();
         }
@@ -124,11 +126,13 @@ public:
         keywordAdgroupSet[keyword].insert(adgroup);
 
         uint32_t price;
-        std::getline(ss, price, delimiter);
+        std::getline(ss, token, delimiter);
+        price = std::stoul(token);
         adgroup2price[adgroup] = price;
 
         uint8_t status;
-        std::getline(ss, status, delimiter);
+        std::getline(ss, token, delimiter);
+        status = std::stoi(token);
         std::getline(ss, token, delimiter);
         std::vector<uint8_t> timings = split2int(token, ',');
         uint32_t timing = timings2int(timings, status);
@@ -142,7 +146,7 @@ public:
         std::getline(ss, token, delimiter);
     }
 
-    std::vector<std::vector<std::string>> read_csv_rows(const std::string& csv_file, int start_row, int end_row) {
+    void read_csv_rows(const std::string& csv_file, int start_row, int end_row) {
         std::ifstream file(csv_file);
         std::string line;
         int row_num = 0;
@@ -160,9 +164,48 @@ public:
         int end_row = 20;  
         read_csv_rows(path, start_row, end_row);
     }
+    void printPrivate(){
+        std::cout << "keywordID:" << std::endl;
+        for (const auto& pair : keywordID) {
+            std::cout << pair.first << ": " << pair.second << std::endl;
+        }
 
-    GreeterServiceImpl() {
-        readCsv("/data/raw_data.csv");
+        std::cout << "adgroupID:" << std::endl;
+        for (const auto& pair : adgroupID) {
+            std::cout << pair.first << ": " << pair.second << std::endl;
+        }
+
+        std::cout << "keywordAdgroupSet:" << std::endl;
+        for (const auto& set : keywordAdgroupSet) {
+            for (const auto& value : set) {
+                std::cout << value << " ";
+            }
+            std::cout << std::endl;
+        }
+
+        std::cout << "keywordAdgroup2vector:" << std::endl;
+        for (const auto& map : keywordAdgroup2vector) {
+            for (const auto& pair : map) {
+                std::cout << pair.first << ": (" << pair.second.first << ", " << pair.second.second << ") ";
+            }
+            std::cout << std::endl;
+        }
+
+        std::cout << "adgroup2price:" << std::endl;
+        for (const auto& pair : adgroup2price) {
+            std::cout << pair.first << ": " << pair.second << std::endl;
+        }
+
+        std::cout << "adgroup2timings:" << std::endl;
+        for (const auto& pair : adgroup2timings) {
+            std::cout << pair.first << ": " << pair.second << std::endl;
+        }
+    }
+    SearchServiceImpl() {
+        std::cout << "开始读取csv" << std::endl;
+        readCsv("./data/raw_data.csv");
+        std::cout << "读取csv成功" << std::endl;
+        printPrivate();
     }
 
     Status Search(ServerContext* context, const Request* request, Response* response) override {

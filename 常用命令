@@ -35,6 +35,6 @@ git push origin master
 
 
 
-git add code/demo_grpc_helloworld/greeter_server.cc
-git commit -m "提交c测试"
+git add code/alimama/demo_alimama_search_service.cc 
+git commit -m ""
 git push
