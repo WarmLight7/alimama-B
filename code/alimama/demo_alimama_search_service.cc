@@ -58,6 +58,7 @@ std::string getLocalIP() {
 struct AdGroup {
     float score;
     float price;
+    float ctr;
     uint64_t adgroup_id;
 
     bool operator<(const AdGroup& other) const {
@@ -173,7 +174,7 @@ public:
         }
     }
     // 合并两个长度为 topn 的优先队列为一个长度为 topn 的优先队列
-    std::priority_queue<int> mergePriorityQueues(const std::priority_queue<int>& pq1, const std::priority_queue<int>& pq2, int topn) {
+    std::priority_queue<int> mergePriorityQueues(std::priority_queue<int>& pq1, std::priority_queue<int>& pq2, int topn) {
         std::priority_queue<int> mergedPQ;
         // 将 pq1 和 pq2 的元素逐个插入 mergedPQ
         while (!pq1.empty()) {
@@ -264,26 +265,22 @@ public:
         return dot / (magA * magB) + 0.000001f;
     }
     
-    float getScore(float& ctr, int& prices){
-
-    }
     Status Search(ServerContext* context, const Request* request, Response* response) override {
     // 作为示例，我们只是简单地返回一些假数据。
     // 假设我们找到了两个广告单元
-    std::vector<uint64_t> userKeywords = request->(keywords);
-    std::vector<float> context_vector = request->(context_vector);
+    google::protobuf::RepeatedField<uint64_t> userKeywords = request->keywords();
+    google::protobuf::RepeatedField<float> context_vector = request->context_vector();
     std::pair<float, float> userVector = std::make_pair(context_vector[0], context_vector[1]);
-    uint32_t hour = request->(hour);
-    uint32_t topn = request->(topn);
+    uint32_t hour = request->hour();
+    uint32_t topn = request->topn();
     
     int keywordLength = userKeywords.size();
     // 首先根据hour过滤出可行的字段列表
-    std::vector<std::set<uint32_t> > adgroupUseful(keywordLength, {});
-    for(const auto& userKeyword : userKeywords){
+    std::vector<std::set<uint32_t> > adgroupUseful(keywordLength, std::set<uint32_t>{});
     for(int userKeywordid = 0 ; userKeywordid < keywordLength ; userKeywordid++){
-        uint64_t userKeyword = userkeywords[userKeywordid];
+        uint64_t userKeyword = userKeywords[userKeywordid];
         for(const auto& adgroup : keywordAdgroupSet[keywordID[userKeyword]]) {
-            if(checkHour(adgroup, hour)){
+            if(checkHours(adgroup, hour)){
                 adgroupUseful[userKeywordid].insert(adgroup);
             }
         }
@@ -310,7 +307,7 @@ public:
         nowAdgroup.ctr = 0;
         for(const auto& userKeyword : userKeywords){
             float ctr = getCtr(userVector, keywordAdgroup2vector[keywordID[userKeyword]][adgroup]);
-            nowAdgroup.ctr = max(ctr, nowAdgroup.ctr);
+            nowAdgroup.ctr = std::max(ctr, nowAdgroup.ctr);
         }
         nowAdgroup.price = adgroup2price[adgroup];
         nowAdgroup.score = nowAdgroup.ctr * nowAdgroup.price;
@@ -320,7 +317,7 @@ public:
         }
         else if(adGroupPQ.top() < nowAdgroup){
             adGroupPQ.pop();
-            dGroupPQ.push(nowAdgroup);
+            adGroupPQ.push(nowAdgroup);
         }
     }
     
