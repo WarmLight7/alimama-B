@@ -60,7 +60,9 @@ struct AdGroup {
     float price;
     float ctr;
     uint64_t adgroup_id;
-
+    bool operator=(const AdGroup& other) const{
+        return adgroup_id == other.adgroup_id;
+    }
     bool operator<(const AdGroup& other) const {
         if (score < other.score) {
             return true;
@@ -173,25 +175,33 @@ public:
             rowNum++;
         }
     }
-    // 合并两个长度为 topn 的优先队列为一个长度为 topn 的优先队列
-    std::priority_queue<int> mergePriorityQueues(std::priority_queue<int>& pq1, std::priority_queue<int>& pq2, int topn) {
-        std::priority_queue<int> mergedPQ;
-        // 将 pq1 和 pq2 的元素逐个插入 mergedPQ
-        while (!pq1.empty()) {
-            mergedPQ.push(pq1.top());
+    // 合并两个优先队列并返回去重后的 topn 个元素的优先队列
+    std::priority_queue<AdGroup> mergeAndDistinctPriorityQueues(std::priority_queue<AdGroup>& pq1, std::priority_queue<AdGroup>& pq2, int topn) {
+        std::priority_queue<AdGroup> mergedPQ;
+        std::unordered_set<AdGroup> distinctElements;
+
+        while(!pq1.empty()){
+            nowAdgroup = pq1.top();
             pq1.pop();
+            auto iter = distinctElements.find(nowAdgroup);
+            if(iter == distinctElements.end() || *iter < nowAdgroup){
+                distinctElements.insert(nowAdgroup);
+            }
+            
         }
-
-        while (!pq2.empty()) {
-            mergedPQ.push(pq2.top());
+         while(!pq2.empty()){
+            nowAdgroup = pq2.top();
             pq2.pop();
+            auto iter = distinctElements.find(nowAdgroup);
+            if(iter == distinctElements.end() || *iter < nowAdgroup){
+                distinctElements.insert(nowAdgroup);
+            }
         }
+        std::copy(distinctElements.begin(), distinctElements.end(), std::back_inserter(mergedPQ));
 
-        // 如果 mergedPQ 的大小超过 topn，删除多余的元素
-        while (mergedPQ.size() > topn) {
+        while (mergedPQ.size() > topn+1) {
             mergedPQ.pop();
         }
-
         return mergedPQ;
     }
     void readCsv(const std::string& path){
