@@ -33,6 +33,7 @@ using alimama::proto::SearchService;
 #include <cmath>
 #include <vector>
 #include <bits/stdc++.h>
+#include "csv.h"
 
 std::string getLocalIP() {
     struct ifaddrs *ifAddrStruct = NULL;
@@ -99,75 +100,52 @@ public:
         ss >> result.second;
         return result;
     }
-    void processeline(const std::string& str, char delimiter) {
-        
-        std::stringstream ss(str);
-        std::string token;
-        // std::vector<std::string> tokens;
-        // while (std::getline(ss, token, delimiter)) {
-        //     tokens.push_back(token);
-        // }
 
-        uint64_t keyword;
-        std::getline(ss, token, delimiter);
-        keyword = std::stoull(token);
-        if (keywordID.find(keyword) == keywordID.end()) {
-            keywordID[keyword] = keywordID.size();
-        }
-        keyword = keywordID[keyword];
-        uint64_t adgroup;
-        std::getline(ss, token, delimiter);
-        adgroup = std::stoull(token);
-        if (adgroupID.find(adgroup) == adgroupID.end()) {
-            adgroupID[adgroup] = adgroupID.size();
-        }
-        adgroup = adgroupID[adgroup];
-        if(keywordAdgroupSet.size() > keyword){
-            keywordAdgroupSet[keyword].insert(adgroup);
-        }
-        else{
-            keywordAdgroupSet.emplace_back(std::set<uint32_t>{});
-            keywordAdgroupSet[keyword].insert(adgroup);
-        }
-
-        uint32_t price;
-        std::getline(ss, token, delimiter);
-        price = std::stoul(token);
-        adgroup2price[adgroup] = price;
-
+    void read_csv_rows(const std::string& csvFile, int startRow, int endRow ) {
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        int rowNum = 0;
+        std::cout << rowNum << " " << startRow << " " << endRow << std::endl;
+        reader.set_file_line(startRow);
+        int currentRow = startRow;
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
         uint8_t status;
-        std::getline(ss, token, delimiter);
-        status = std::stoi(token);
-        std::getline(ss, token, delimiter);
-        std::vector<uint8_t> timings = split2int(token, ',');
-        uint32_t timing = timings2int(timings, status);
-        adgroup2timings[adgroup] = timing;
+        std::vector<uint8_t> timings(24, 0);
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
 
-        std::getline(ss, token, delimiter);
-        std::pair<float, float> itemVector = split2float(token);
-        if(keywordAdgroup2vector.size() > keyword){
-            keywordAdgroup2vector[keyword][adgroup] = itemVector;
-        }
-        else{
-            keywordAdgroup2vector.emplace_back(std::map<uint32_t, std::pair<float, float> >{});
-            keywordAdgroup2vector[keyword][adgroup] = itemVector;
-        }
-        std::getline(ss, token, delimiter);
-        std::getline(ss, token, delimiter);
-    }
-
-    void read_csv_rows(const std::string& csv_file, int start_row, int end_row) {
-        std::ifstream file(csv_file);
-        std::string line;
-        int row_num = 0;
-        std::cout << row_num << " " << start_row << " " << end_row << std::endl;
-        while (std::getline(file, line) && row_num < end_row) {
-            if (row_num >= start_row) {
-                processeline(line, '\t');
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            if (keywordID.find(keyword) == keywordID.end()) {
+                keywordID[keyword] = keywordID.size();
             }
-            row_num++;
+            keyword = keywordID[keyword];
+            if (adgroupID.find(adgroup) == adgroupID.end()) {
+                adgroupID[adgroup] = adgroupID.size();
+            }
+            adgroup = adgroupID[adgroup];
+
+            if(keywordAdgroupSet.size() > keyword){
+                keywordAdgroupSet[keyword].insert(adgroup);
+            }
+            else{
+                keywordAdgroupSet.emplace_back(std::set<uint32_t>{});
+                keywordAdgroupSet[keyword].insert(adgroup);
+            }
+            adgroup2price[adgroup] = price;
+
+            timings = split2int(timingString, ',');
+            uint32_t timing = timings2int(timings, status);
+            adgroup2timings[adgroup] = timing;
+
+            itemVector = split2float(itemVectorString);
+            if(keywordAdgroup2vector.size() > keyword){
+                keywordAdgroup2vector[keyword][adgroup] = itemVector;
+            }
+            else{
+                keywordAdgroup2vector.emplace_back(std::map<uint32_t, std::pair<float, float> >{});
+                keywordAdgroup2vector[keyword][adgroup] = itemVector;
+            }
+            rowNum++;
         }
-        file.close();
     }
     
     void readCsv(const std::string& path){
