@@ -324,14 +324,30 @@ public:
         }
     }
     
+    uint64_t responseAdgroup[topn];
+    uint64_t responsePrice[topn];
     
+    if(adGroupPQ.size() <= 1){
+        return Status::OK;
+    }
+    nowAdgroup = adGroupPQ.top();
+    float score = nowAdgroup.score;
+    if(adGroupPQ.size() >= topn){
+        adGroupPQ.pop();
+    }
+    int PQsize = adGroupPQ.size();
+    for(int i = PQsize-1 ; i >= 0 ; i--){
+        nowAdgroup = adGroupPQ.top();
+        adGroupPQ.pop();
+        responseAdgroup[i] = nowAdgroup.adgroup_id;
+        responsePrice[i] = score/nowAdgroup.ctr + 0.5;
+        score = nowAdgroup.score;
+    }
 
-    response->add_adgroup_ids(12345);
-    response->add_adgroup_ids(67890);
-
-    // 对应的价格
-    response->add_prices(100);
-    response->add_prices(200);
+    for(int i = 0 ; i < PQsize ; i++){
+        response->add_adgroup_ids(responseAdgroup[i]);
+        response->add_prices(responsePrice[i]);
+    }
     return Status::OK;
   }
 
