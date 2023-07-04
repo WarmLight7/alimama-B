@@ -104,6 +104,31 @@ void RunServer() {
 
 int main(int argc, char** argv) {
 //   RunServer();
+
+    // 服务端使用方法
+    std::cout<<"Listening..."<<std::endl;
+    TLVServer server;
+    server.TLVListening();
+
+    // 客户端使用方法
+    TLVClient client("node-1");
     
-  return 0;
+    char buffer[1024];
+    rpcRequest req;
+    req.keywords = {1,2,3,4,5,6,7};
+    req.context_vector[0] = 0.1;
+    req.context_vector[1] = 0.2;
+    req.hour = 13;
+    req.topn = 10;
+    req.print();
+    RPCRequest2Bytes(req, buffer);
+    client.TLVSendMessage(buffer, (int)((buffer[1] << 8) | buffer[2]));
+
+    rpcResponse res;
+    res.adgroup_ids = {9,8,77};
+    res.prices = {147,258,369};
+    RPCResponse2Bytes(res, buffer);
+    client.TLVSendMessage(buffer, (int)((buffer[1] << 8) | buffer[2]));
+    
+    return 0;
 }
