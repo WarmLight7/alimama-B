@@ -33,6 +33,8 @@ using alimama::proto::SearchService;
 #include <cmath>
 #include <vector>
 
+#include "tlv.h"
+
 std::string getLocalIP() {
     struct ifaddrs *ifAddrStruct = NULL;
     void *tmpAddrPtr = NULL;
@@ -101,7 +103,7 @@ void RunServer() {
 }
 
 int main(int argc, char** argv) {
-  RunServer();
-
+//   RunServer();
+    
   return 0;
 }
