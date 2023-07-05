@@ -13,6 +13,7 @@ struct rpcRequest
     float context_vector[2];
     uint64_t hour;
     uint64_t topn;
+    uint64_t requestID;
 
     void print()
     {
@@ -25,6 +26,7 @@ struct rpcRequest
         std::cout << "  context_vector: " << context_vector[0] << " " << context_vector[1] << std::endl;
         std::cout << "  hour: " << hour << std::endl;
         std::cout << "  topn: " << topn << std::endl;
+        std::cout << "  requestID: " << requestID << std::endl;
         std::cout<<std::endl;
     }
 };
@@ -32,6 +34,7 @@ struct rpcResponse
 {
     std::vector<uint64_t> adgroup_ids;
     std::vector<uint64_t> prices;
+    uint64_t responseID;
 
     void print()
     {
@@ -47,7 +50,7 @@ struct rpcResponse
             std::cout<<price<<" ";
         }
         std::cout<<std::endl;
-        std::cout<<std::endl;
+        std::cout << "  responseID: " << responseID << std::endl;
     }
 };
 void RPCRequest2Bytes(rpcRequest& req, char* buffer)
@@ -60,6 +63,9 @@ void RPCRequest2Bytes(rpcRequest& req, char* buffer)
 
     index += sizeof(uint64_t);
     std::memcpy(buffer + index, reinterpret_cast<char*>(&req.topn), sizeof(uint64_t));
+
+    index += sizeof(uint64_t);
+    std::memcpy(buffer + index, reinterpret_cast<char*>(&req.requestID), sizeof(uint64_t));
 
     index += sizeof(uint64_t);
     std::memcpy(buffer + index, reinterpret_cast<char*>(&req.context_vector[0]), sizeof(float));
@@ -89,6 +95,9 @@ void Bytes2RPCRequest(rpcRequest& req, const char* buffer)
     index += sizeof(uint64_t);
     std::memcpy(&req.topn, &buffer[index], sizeof(uint64_t));
 
+    index += sizeof(uint64_t);
+    std::memcpy(&req.requestID, &buffer[index], sizeof(uint64_t));
+
     index += sizeof(uint64_t); // 在这个地方开始copy
     for(int j = 0; j < 2; j++) 
     {
@@ -109,6 +118,10 @@ void RPCResponse2Bytes(rpcResponse& res, char* buffer)
     //编码长度
 
     int index = 3; // 1,2字节存储长度
+
+    std::memcpy(buffer + index, reinterpret_cast<char*>(&res.responseID), sizeof(uint64_t));
+    index += sizeof(uint64_t);
+
     for(int j = 0; j < res.adgroup_ids.size(); j++) 
     {
         std::memcpy(buffer + index, reinterpret_cast<char*>(&res.adgroup_ids[j]), sizeof(uint64_t));
@@ -118,7 +131,7 @@ void RPCResponse2Bytes(rpcResponse& res, char* buffer)
     {
         std::memcpy(buffer + index, reinterpret_cast<char*>(&res.prices[j]), sizeof(uint64_t));
         index += sizeof(uint64_t);
-    }
+    }  
 
     // TLV 存储长度
     buffer[1] = index >> 8;  // 长度高字节
@@ -131,8 +144,11 @@ void Bytes2RPCResponse(rpcResponse& res, const char* buffer)
 
     int index = 3;
 
+    std::memcpy(&res.responseID, &buffer[index], sizeof(uint64_t));
+    index += sizeof(uint64_t);
+
     // 解析adgroup_ids数组
-    for(; index < 3 + (length - 3) / 2; index += sizeof(uint64_t)) 
+    for(; index < 3 + 8 + (length - 3 - 8) / 2; index += sizeof(uint64_t)) 
     {
         uint64_t temp = 0;
         std::memcpy(&temp, &buffer[index], sizeof(uint64_t));
@@ -145,7 +161,7 @@ void Bytes2RPCResponse(rpcResponse& res, const char* buffer)
         uint64_t temp = 0;
         std::memcpy(&temp, &buffer[index], sizeof(uint64_t));
         res.prices.push_back(temp);
-    }
+    }    
 }
 
 class TLVServer {
