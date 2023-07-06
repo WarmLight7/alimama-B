@@ -60,23 +60,23 @@ struct AdGroup {
     float price;
     float ctr;
     uint64_t adgroup_id;
-    bool operator=(const AdGroup& other) const{
+    bool operator==(const AdGroup& other) const{
         return adgroup_id == other.adgroup_id;
     }
     bool operator<(const AdGroup& other) const {
-        if (score < other.score) {
+        if (score > other.score) {
             return true;
-        } else if (score > other.score) {
+        } else if (score < other.score) {
             return false;
         }
 
-        if (price > other.price) {
+        if (price < other.price) {
             return true;
-        } else if (price < other.price) {
+        } else if (price > other.price) {
             return false;
         }
 
-        return adgroup_id < other.adgroup_id;
+        return adgroup_id > other.adgroup_id;
     }
 };
 
@@ -106,7 +106,7 @@ public:
         return 1 << (hour);
     }
     bool checkHours(uint32_t adgroup, int hour){
-        return adgroup2timings[adgroup][hour];
+        return adgroup2timings[adgroup][23-hour];
     }
 
     //csv读取
@@ -178,10 +178,10 @@ public:
     // 合并两个优先队列并返回去重后的 topn 个元素的优先队列
     std::priority_queue<AdGroup> mergeAndDistinctPriorityQueues(std::priority_queue<AdGroup>& pq1, std::priority_queue<AdGroup>& pq2, int topn) {
         std::priority_queue<AdGroup> mergedPQ;
-        std::unordered_set<AdGroup> distinctElements;
+        std::set<AdGroup> distinctElements;
 
         while(!pq1.empty()){
-            nowAdgroup = pq1.top();
+            AdGroup nowAdgroup = pq1.top();
             pq1.pop();
             auto iter = distinctElements.find(nowAdgroup);
             if(iter == distinctElements.end() || *iter < nowAdgroup){
@@ -190,14 +190,18 @@ public:
             
         }
          while(!pq2.empty()){
-            nowAdgroup = pq2.top();
+            AdGroup nowAdgroup = pq2.top();
             pq2.pop();
             auto iter = distinctElements.find(nowAdgroup);
             if(iter == distinctElements.end() || *iter < nowAdgroup){
                 distinctElements.insert(nowAdgroup);
             }
         }
-        std::copy(distinctElements.begin(), distinctElements.end(), std::back_inserter(mergedPQ));
+        // std::copy(distinctElements.begin(), distinctElements.end(), std::back_inserter(mergedPQ));
+        for(auto &it:distinctElements)
+        {
+            mergedPQ.push(it);
+        }
 
         while (mergedPQ.size() > topn+1) {
             mergedPQ.pop();
@@ -231,20 +235,19 @@ public:
         std::cout << "keywordAdgroup2vector:" << std::endl;
         for (const auto& map : keywordAdgroup2vector) {
             for (const auto& pair : map) {
-                std::cout << pair.first << ": (" << pair.second.first << ", " << pair.second.second << ") ";
+                std::cout << pair.first << ": (" << ID2adgroup[pair.second.first] << ", " << pair.second.second << ") ";
             }
             std::cout << std::endl;
         }
 
         std::cout << "adgroup2price:" << std::endl;
         for (const auto& pair : adgroup2price) {
-            std::cout << pair.first << ": " << pair.second << std::endl;
+            std::cout << ID2adgroup[pair.first] << ": " << pair.second << std::endl;
         }
 
         std::cout << "adgroup2timings:" << std::endl;
         for (const auto& pair : adgroup2timings) {
-            std::bitset<24> binary(pair.second);
-            std::cout << pair.first << ": " << binary << std::endl;
+            std::cout << ID2adgroup[pair.first] << ": " << pair.second << std::endl;
         }
     }
     SearchServiceImpl() {
@@ -276,88 +279,104 @@ public:
     }
     
     Status Search(ServerContext* context, const Request* request, Response* response) override {
-    // 作为示例，我们只是简单地返回一些假数据。
-    // 假设我们找到了两个广告单元
-    google::protobuf::RepeatedField<uint64_t> userKeywords = request->keywords();
-    google::protobuf::RepeatedField<float> context_vector = request->context_vector();
-    std::pair<float, float> userVector = std::make_pair(context_vector[0], context_vector[1]);
-    uint32_t hour = request->hour();
-    uint32_t topn = request->topn();
-    
-    int keywordLength = userKeywords.size();
-    // 首先根据hour过滤出可行的字段列表
-    std::vector<std::set<uint32_t> > adgroupUseful(keywordLength, std::set<uint32_t>{});
-    for(int userKeywordid = 0 ; userKeywordid < keywordLength ; userKeywordid++){
-        uint64_t userKeyword = userKeywords[userKeywordid];
-        for(const auto& adgroup : keywordAdgroupSet[keywordID[userKeyword]]) {
-            if(checkHours(adgroup, hour)){
-                adgroupUseful[userKeywordid].insert(adgroup);
+        // 作为示例，我们只是简单地返回一些假数据。
+        // 假设我们找到了两个广告单元
+        google::protobuf::RepeatedField<uint64_t> userKeywords = request->keywords();
+        google::protobuf::RepeatedField<float> context_vector = request->context_vector();
+        std::pair<float, float> userVector = std::make_pair(context_vector[0], context_vector[1]);
+        uint32_t hour = request->hour();
+        uint32_t topn = request->topn();
+        
+        int keywordLength = userKeywords.size();
+        // 首先根据hour过滤出可行的字段列表
+        std::vector<std::set<uint32_t> > adgroupUseful(keywordLength, std::set<uint32_t>{});
+        for(int userKeywordid = 0 ; userKeywordid < keywordLength ; userKeywordid++){ // 遍历关键字
+            uint64_t userKeyword = userKeywords[userKeywordid];
+            for(const auto& adgroup : keywordAdgroupSet[keywordID[userKeyword]]) {  // 遍历关键字下的所有adgroupid
+                if(checkHours(adgroup, hour)){
+                    adgroupUseful[userKeywordid].insert(adgroup);
+                }
             }
         }
-    }
-
-    // 过滤完可行的字段列表之后应该要合并
-    std::set<uint32_t> intersection = adgroupUseful[0];
-    for (std::size_t i = 1; i < adgroupUseful.size(); ++i) {
-        std::set<uint32_t> current_set = adgroupUseful[i];
-        std::set<uint32_t> new_intersection;
-        // 取交集
-        std::set_intersection(intersection.begin(), intersection.end(),
-                              current_set.begin(), current_set.end(),
-                              std::inserter(new_intersection, new_intersection.begin()));
-        intersection = std::move(new_intersection);
-    }
-
-    // 合并完了就是可行集合需要维护解
-    std::priority_queue<AdGroup> adGroupPQ;
-
-    AdGroup nowAdgroup;
-
-    for (const auto& adgroup : intersection){
-        nowAdgroup.ctr = 0;
-        for(const auto& userKeyword : userKeywords){
-            float ctr = getCtr(userVector, keywordAdgroup2vector[keywordID[userKeyword]][adgroup]);
-            nowAdgroup.ctr = std::max(ctr, nowAdgroup.ctr);
+        
+        // 输出过滤后的可行字段列表
+        for(int i = 0; i < adgroupUseful.size(); i++)
+        {
+            for(auto &j:adgroupUseful[i])
+            {
+                std::cout<<ID2adgroup[j]<<std::endl;
+            }
         }
-        nowAdgroup.price = adgroup2price[adgroup];
-        nowAdgroup.score = nowAdgroup.ctr * nowAdgroup.price;
-        nowAdgroup.adgroup_id = ID2adgroup[adgroup];
-        if(adGroupPQ.size() < topn+1){
-            adGroupPQ.push(nowAdgroup);
+
+        // 过滤完可行的字段列表之后应该要合并
+        std::set<uint32_t> intersection = adgroupUseful[0];
+        for (std::size_t i = 1; i < adgroupUseful.size(); ++i) {
+            std::set<uint32_t> current_set = adgroupUseful[i];
+            std::set<uint32_t> new_intersection;
+            // 取交集
+            std::set_intersection(intersection.begin(), intersection.end(),
+                                current_set.begin(), current_set.end(),
+                                std::inserter(new_intersection, new_intersection.begin()));
+            intersection = std::move(new_intersection);
         }
-        else if(adGroupPQ.top() < nowAdgroup){
+
+        // 合并完了就是可行集合需要维护解
+        std::priority_queue<AdGroup> adGroupPQ;
+
+        
+
+        for (const auto& adgroup : intersection){
+            AdGroup nowAdgroup;
+            nowAdgroup.ctr = 0;
+            for(const auto& userKeyword : userKeywords){
+                float ctr = getCtr(userVector, keywordAdgroup2vector[keywordID[userKeyword]][adgroup]);
+                nowAdgroup.ctr = std::max(ctr, nowAdgroup.ctr);
+            }
+            nowAdgroup.price = adgroup2price[adgroup];
+            nowAdgroup.score = nowAdgroup.ctr * nowAdgroup.price;
+            nowAdgroup.adgroup_id = ID2adgroup[adgroup];
+            if(adGroupPQ.size() < topn+1){
+                adGroupPQ.push(nowAdgroup);
+                std::cout<<"1:"<<nowAdgroup.adgroup_id<<std::endl;
+                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+            }
+            else if(nowAdgroup < adGroupPQ.top()){
+                std::cout<<"adGroupPQ.top().score:"<<adGroupPQ.top().score<<std::endl;
+                adGroupPQ.pop();
+                adGroupPQ.push(nowAdgroup);
+                std::cout<<"2:"<<nowAdgroup.adgroup_id<<std::endl;
+                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+            }
+        }
+        
+        uint64_t responseAdgroup[topn+1];
+        uint64_t responsePrice[topn+1];
+        std::cout<<"adGroupPQ.size()"<<adGroupPQ.size()<<std::endl;
+        if(adGroupPQ.size() <= 1){
+            return Status::OK;
+        }
+        AdGroup nowAdgroup = adGroupPQ.top();
+        float score = nowAdgroup.score;
+        if(adGroupPQ.size() >= topn+1){
             adGroupPQ.pop();
-            adGroupPQ.push(nowAdgroup);
         }
-    }
-    
-    uint64_t responseAdgroup[topn];
-    uint64_t responsePrice[topn];
-    
-    if(adGroupPQ.size() <= 1){
+        int PQsize = adGroupPQ.size();
+        std::cout<<"PQsize"<<PQsize<<std::endl;
+        for(int i = PQsize-1 ; i >= 0 ; i--){
+            nowAdgroup = adGroupPQ.top();
+            adGroupPQ.pop();
+            std::cout<<"nowAdgroup.adgroup_id"<<nowAdgroup.adgroup_id<<std::endl;
+            responseAdgroup[i] = nowAdgroup.adgroup_id;
+            responsePrice[i] = score/nowAdgroup.ctr + 0.5;
+            score = nowAdgroup.score;
+        }
+
+        for(int i = 0 ; i < PQsize ; i++){
+            response->add_adgroup_ids(responseAdgroup[i]);
+            response->add_prices(responsePrice[i]);
+        }
         return Status::OK;
     }
-    nowAdgroup = adGroupPQ.top();
-    float score = nowAdgroup.score;
-    if(adGroupPQ.size() >= topn){
-        adGroupPQ.pop();
-    }
-    int PQsize = adGroupPQ.size();
-    for(int i = PQsize-1 ; i >= 0 ; i--){
-        nowAdgroup = adGroupPQ.top();
-        adGroupPQ.pop();
-        responseAdgroup[i] = nowAdgroup.adgroup_id;
-        responsePrice[i] = score/nowAdgroup.ctr + 0.5;
-        score = nowAdgroup.score;
-    }
-
-    for(int i = 0 ; i < PQsize ; i++){
-        response->add_adgroup_ids(responseAdgroup[i]);
-        response->add_prices(responsePrice[i]);
-    }
-    return Status::OK;
-  }
-
 };
 
 void RunServer() {
@@ -394,7 +413,33 @@ void RunServer() {
 }
 
 int main(int argc, char** argv) {
-  RunServer();
 
+    //node-1监听
+    RunServer();
+    //node-2访问
+    // std::string diskCache = "node-1:50051";
+    // std::unique_ptr<SearchService::Stub> stub_(SearchService::NewStub(grpc::CreateChannel(diskCache, grpc::InsecureChannelCredentials())));
+    // Request request;
+
+    // request.add_keywords(2916200016);
+    // request.add_context_vector(0.351177);
+    // request.add_context_vector(0.936309);
+    // request.set_hour(7);
+    // request.set_topn(2);
+
+    // Response reply;
+    // grpc::ClientContext context;
+    // std::cout << "正在读取..."<< std::endl;
+    // Status status = stub_->Search(&context, request, &reply);
+    // for(const auto& adgroup_id : reply.adgroup_ids())
+    // {
+    //     std::cout << "adgroup_id:"<< adgroup_id << std::endl;
+    // }
+    // for(const auto& price : reply.prices())
+    // {
+    //     std::cout << "price:"<< price << std::endl;
+    // }
+
+    // 应响应输出644960096148,1710671559561	27435,39778
   return 0;
 }
