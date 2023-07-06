@@ -64,20 +64,16 @@ struct AdGroup {
         return adgroup_id == other.adgroup_id;
     }
     bool operator<(const AdGroup& other) const {
-        if (score > other.score) {
-            return true;
-        } else if (score < other.score) {
-            return false;
-        }
-
-        if (price < other.price) {
-            return true;
-        } else if (price > other.price) {
-            return false;
-        }
-
-        return adgroup_id > other.adgroup_id;
+    if (std::abs(score - other.score) > 1e-6) {
+        return score > other.score;
     }
+
+    if (std::abs(price - other.price) > 1e-6) {
+        return price < other.price;
+    }
+
+    return adgroup_id > other.adgroup_id;
+}
 };
 
 

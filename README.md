@@ -155,16 +155,12 @@ topn个response：
               return adgroup_id == other.adgroup_id;
           }
           bool operator<(const AdGroup& other) const {
-              if (score > other.score) {
-                  return true;
-              } else if (score < other.score) {
-                  return false;
+              if (std::abs(score - other.score) > 1e-6) {
+                  return score > other.score;
               }
       
-              if (price < other.price) {
-                  return true;
-              } else if (price > other.price) {
-                  return false;
+              if (std::abs(price - other.price) > 1e-6) {
+                  return price < other.price;
               }
       
               return adgroup_id > other.adgroup_id;
@@ -175,7 +171,7 @@ topn个response：
       ```
       
       
-  
+    
   - 对于请求的响应容器 用TLV向队友机器请求相同的返回（这里是否可以在接到请求的时候直接向两个队友机器发送请求，并在自己计算完优先队列之后等待返回在继续操作）
   
     - 需要实现的函数：
