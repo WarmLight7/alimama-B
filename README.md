@@ -151,25 +151,26 @@ topn个response：
           float price;
           float ctr;
           uint64_t adgroup_id;
-          bool operator=(const AdGroup& other) const{
+          bool operator==(const AdGroup& other) const{
               return adgroup_id == other.adgroup_id;
           }
           bool operator<(const AdGroup& other) const {
-              if (score < other.score) {
+              if (score > other.score) {
                   return true;
-              } else if (score > other.score) {
+              } else if (score < other.score) {
                   return false;
               }
       
-              if (price > other.price) {
+              if (price < other.price) {
                   return true;
-              } else if (price < other.price) {
+              } else if (price > other.price) {
                   return false;
               }
       
-              return adgroup_id < other.adgroup_id;
+              return adgroup_id > other.adgroup_id;
           }
       };
+      
       priority_queue<AdGroup> adGroup;
       ```
       
