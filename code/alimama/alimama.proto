@@ -37,6 +37,10 @@ message Response {
 
   // 广告单元对应的出价(单位为分)
   repeated uint64 prices = 2;
+
+  repeated float myscores = 3;
+  repeated float myprices = 4;
+  repeated float myctrs = 5;
 }
 
 service SearchService {
