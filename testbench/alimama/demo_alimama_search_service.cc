@@ -493,30 +493,30 @@ void RunServer() {
 int main(int argc, char** argv) {
 
     //node-1监听
-    RunServer();
+    // RunServer();
     //node-2访问
-    // std::string diskCache = "node-1:50051";
-    // std::unique_ptr<SearchService::Stub> stub_(SearchService::NewStub(grpc::CreateChannel(diskCache, grpc::InsecureChannelCredentials())));
-    // Request request;
+    std::string diskCache = "node-1:50051";
+    std::unique_ptr<SearchService::Stub> stub_(SearchService::NewStub(grpc::CreateChannel(diskCache, grpc::InsecureChannelCredentials())));
+    Request request;
 
-    // request.add_keywords(2916200016);
-    // request.add_context_vector(0.351177);
-    // request.add_context_vector(0.936309);
-    // request.set_hour(7);
-    // request.set_topn(2);
+    request.add_keywords(2916200016);
+    request.add_context_vector(0.351177);
+    request.add_context_vector(0.936309);
+    request.set_hour(7);
+    request.set_topn(2);
 
-    // Response reply;
-    // grpc::ClientContext context;
-    // std::cout << "正在读取..."<< std::endl;
-    // Status status = stub_->Search(&context, request, &reply);
-    // for(const auto& adgroup_id : reply.adgroup_ids())
-    // {
-    //     std::cout << "adgroup_id:"<< adgroup_id << std::endl;
-    // }
-    // for(const auto& price : reply.prices())
-    // {
-    //     std::cout << "price:"<< price << std::endl;
-    // }
+    Response reply;
+    grpc::ClientContext context;
+    std::cout << "正在读取..."<< std::endl;
+    Status status = stub_->Search(&context, request, &reply);
+    for(const auto& adgroup_id : reply.adgroup_ids())
+    {
+        std::cout << "adgroup_id:"<< adgroup_id << std::endl;
+    }
+    for(const auto& price : reply.prices())
+    {
+        std::cout << "price:"<< price << std::endl;
+    }
 
     // 应响应输出644960096148,1710671559561	27435,39778
   return 0;

@@ -1,0 +1,34 @@
+
+syntax = "proto3";
+
+package helloworld.proto;
+
+message Adgroup {
+  float score = 1;
+  float price = 2;
+  float ctr = 3;
+  uint64 adgroup_id = 4;
+}
+
+message InnerRequest {
+  // 指定返回的广告需要匹配的keyword。
+  repeated uint64 keywords = 1;
+
+  // 根据用户和关键词生成的上下文向量。向量维度为2。
+  repeated float context_vector = 2;
+
+  // 指定返回的广告需要匹配的时段，取值范围为[0,23]
+  uint64 hour = 3;
+
+  // 返回的广告单元的数量，若满足后续条件的广告单元数量不足`topn`个，则返回所有满足条件的广告单元
+  // 若满足后续条件的广告单元数量超过`topn`个，则返回按分数降序排列的前`topn`个广告单元。
+  uint64 topn = 4;
+}
+
+message InnerResponse {
+  repeated Adgroup adgroups = 1;
+}
+
+service Greeter {
+  rpc Get(InnerRequest) returns (InnerResponse) {}
+}
