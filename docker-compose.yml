@@ -12,8 +12,7 @@ services:
 
   node1:
     container_name: node-1
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
-    cpuset: "0-3"
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v1
     deploy:
       resources:
         limits:
@@ -25,8 +24,8 @@ services:
     networks:
       - alimama
     volumes:
-      - "D:/alimama/prob-alimama-2023-B/node-1:/work"
-      - "D:/alimama/prob-alimama-2023-B/data:/data:ro"
+      - "./node-1:/work"
+      - "./data:/data:ro"
     environment:
       - NODE_ID=1
       - NODE_NUM=3
@@ -41,7 +40,7 @@ services:
 
   node2:
     container_name: node-2
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v1
     deploy:
       resources:
         limits:
@@ -53,8 +52,8 @@ services:
     networks:
       - alimama
     volumes:
-      - "D:/alimama/prob-alimama-2023-B/node-2:/work"
-      - "D:/alimama/prob-alimama-2023-B/data:/data:ro"
+      - "./node-2:/work"
+      - "./data:/data:ro"
     environment:
       - NODE_ID=2
       - NODE_NUM=3
@@ -68,7 +67,7 @@ services:
 
   node3:
     container_name: node-3
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v1
     deploy:
       resources:
         limits:
@@ -80,8 +79,8 @@ services:
     networks:
       - alimama
     volumes:
-      - "D:/alimama/prob-alimama-2023-B/node-3:/work"
-      - "D:/alimama/prob-alimama-2023-B/data:/data:ro"
+      - "./node-3:/work"
+      - "./data:/data:ro"
     environment:
       - NODE_ID=3
       - NODE_NUM=3
@@ -95,7 +94,7 @@ services:
 
   testbench:
     container_name: node-testbench
-    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
+    image: public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v1
     deploy:
       resources:
         limits:
@@ -109,8 +108,8 @@ services:
     depends_on:
       - etcd
     volumes:
-      - "D:/alimama/prob-alimama-2023-B/testbench:/work"
-      - "D:/alimama/prob-alimama-2023-B/data:/data:ro"
+      - "./testbench:/work"
+      - "./data:/data:ro"
     working_dir: /work
     command: ["bash", "./run.sh"]
 networks:
