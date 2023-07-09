@@ -39,6 +39,33 @@ using alimama::proto::AdgroupMessage;
 #include <bits/stdc++.h>
 #include "csv.h"
 
+
+// etcd写
+void writeData(etcd::Client& etcd, const std::string& key, const std::string& value) {
+    etcd::Response response = etcd.set(key, value).get();
+
+    if (response.is_ok()) {
+        std::cout << "etcd写入成功" << std::endl;
+    } else {
+        std::cerr << "etcd写入失败: " << response.error_message() << std::endl;
+    }
+}
+
+// etcd读
+std::string readData(etcd::Client& etcd, const std::string& key) {
+    pplx::task<etcd::Response> responseTask = etcd.get(key);
+    responseTask.wait(); // 等待任务完成
+
+    etcd::Response response = responseTask.get();
+
+    if (response.is_ok()) {
+        return response.value().as_string();
+    } else {
+        return "";
+    }
+    return "";
+}
+
 std::string getLocalIP() {
     struct ifaddrs *ifAddrStruct = NULL;
     void *tmpAddrPtr = NULL;
@@ -187,10 +214,10 @@ public:
         char *hostname = std::getenv("NODE_ID");
         int hostNode = std::stoi(hostname);
         int start_row = 0;  // 起始行
-        int end_row = 10;  
+        int end_row = 350000000;  
         if(hostNode == 3){
-            start_row += 10;
-            end_row += 10;
+            start_row += 350000000;
+            end_row += 350000000;
         }
         read_csv_rows(path, start_row, end_row);
     }
@@ -243,7 +270,7 @@ public:
         std::cout << "开始读取csv" << std::endl;
         readCsv("/data/raw_data.csv");
         std::cout << "读取csv成功" << std::endl;
-        printPrivate();
+        //printPrivate();
     }
 
     float dot_product(const std::pair<float, float>& A, const std::pair<float, float>& B) {
@@ -330,15 +357,15 @@ public:
             }
             if(adGroupPQ.size() < topn+1){
                 adGroupPQ.push(nowAdgroup);
-                std::cout<<"1:"<<nowAdgroup.adgroup_id<<std::endl;
-                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+                // std::cout<<"1:"<<nowAdgroup.adgroup_id<<std::endl;
+                // std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
             }
             else if(nowAdgroup < adGroupPQ.top()){
-                std::cout<<"adGroupPQ.top().score:"<<adGroupPQ.top().score<<std::endl;
+                // std::cout<<"adGroupPQ.top().score:"<<adGroupPQ.top().score<<std::endl;
                 adGroupPQ.pop();
                 adGroupPQ.push(nowAdgroup);
-                std::cout<<"2:"<<nowAdgroup.adgroup_id<<std::endl;
-                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+                // std::cout<<"2:"<<nowAdgroup.adgroup_id<<std::endl;
+                // std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
             }
         }
         int PQsize = adGroupPQ.size();
@@ -351,6 +378,7 @@ public:
             adgroup->set_ctr(nowAdgroup.ctr);
             adgroup->set_adgroup_id(nowAdgroup.adgroup_id);
         }
+
         return Status::OK;
     }
 };
@@ -367,25 +395,25 @@ public:
         }
     }
     // 合并两个优先队列并返回去重后的 topn 个元素的优先队列
-    std::priority_queue<AdGroup> mergeAndDistinctAdGroup(InnerResponse* rp1, InnerResponse* rp2, int topn) {
+    std::priority_queue<AdGroup> mergeAndDistinctAdGroup(InnerResponse& rp1, InnerResponse& rp2, int topn) {
         std::priority_queue<AdGroup> mergedPQ;
         std::set<AdGroup> distinctElements;
         AdGroup nowAdgroup;
-        for(int i = 0 ; i < rp1->adgroups().size() ; i ++){
-            nowAdgroup.adgroup_id = rp1->adgroups()[i].adgroup_id();
-            nowAdgroup.score = rp1->adgroups()[i].score();
-            nowAdgroup.price = rp1->adgroups()[i].price();
-            nowAdgroup.ctr = rp1->adgroups()[i].ctr();
+        for(int i = 0 ; i < rp1.adgroups().size() ; i ++){
+            nowAdgroup.adgroup_id = rp1.adgroups()[i].adgroup_id();
+            nowAdgroup.score = rp1.adgroups()[i].score();
+            nowAdgroup.price = rp1.adgroups()[i].price();
+            nowAdgroup.ctr = rp1.adgroups()[i].ctr();
             auto iter = distinctElements.find(nowAdgroup);
             if(iter == distinctElements.end() || nowAdgroup < *iter){
                 distinctElements.insert(nowAdgroup);
             }
         }
-        for(int i = 0 ; i < rp2->adgroups().size() ; i ++){
-            nowAdgroup.adgroup_id = rp2->adgroups()[i].adgroup_id();
-            nowAdgroup.score = rp2->adgroups()[i].score();
-            nowAdgroup.price = rp2->adgroups()[i].price();
-            nowAdgroup.ctr = rp2->adgroups()[i].ctr();
+        for(int i = 0 ; i < rp2.adgroups().size() ; i ++){
+            nowAdgroup.adgroup_id = rp2.adgroups()[i].adgroup_id();
+            nowAdgroup.score = rp2.adgroups()[i].score();
+            nowAdgroup.price = rp2.adgroups()[i].price();
+            nowAdgroup.ctr = rp2.adgroups()[i].ctr();
             auto iter = distinctElements.find(nowAdgroup);
             if(iter == distinctElements.end() || nowAdgroup < *iter){
                 distinctElements.insert(nowAdgroup);
@@ -405,17 +433,16 @@ public:
 
     Status Search(ServerContext* context, const Request* request, Response* response) override {
         uint32_t topn = request->topn();
-        InnerResponse* rp[2];
+        InnerResponse rp[2];
         Status status[2];
         for(int i = 0 ; i <= 1 ; i++){
-            status[i] = stub_node[i]->Get(&clientContext[i], *request, rp[i]);
+            status[i] = stub_node[i]->Get(&clientContext[i], *request, &rp[i]);
         }
 
         std::priority_queue<AdGroup> adGroupPQ = mergeAndDistinctAdGroup(rp[0], rp[1], topn);
 
         uint64_t responseAdgroup[topn+1];
         uint64_t responsePrice[topn+1];
-        std::cout<<"adGroupPQ.size()"<<adGroupPQ.size()<<std::endl;
         if(adGroupPQ.size() <= 1){
             return Status::OK;
         }
@@ -425,11 +452,9 @@ public:
             adGroupPQ.pop();
         }
         int PQsize = adGroupPQ.size();
-        std::cout<<"PQsize"<<PQsize<<std::endl;
         for(int i = PQsize-1 ; i >= 0 ; i--){
             nowAdgroup = adGroupPQ.top();
             adGroupPQ.pop();
-            std::cout<<"nowAdgroup.adgroup_id"<<nowAdgroup.adgroup_id<<std::endl;
             responseAdgroup[i] = nowAdgroup.adgroup_id;
             responsePrice[i] = score/nowAdgroup.ctr + 0.5;
             score = nowAdgroup.score;
@@ -464,6 +489,13 @@ void RunServer() {
     
         // 创建一个etcd客户端
         etcd::Client etcd("http://etcd:2379");
+        
+        std::string node2, node3;
+        while(node2 == "" || node3 == ""){
+            if(node2 == "") node2 = readData(etcd,"/readyToRegist/node-2");
+            if(node3 == "") node3 = readData(etcd,"/readyToRegist/node-3");
+        }
+
 
         // 将服务地址注册到etcd中
         auto response = etcd.set(key, external_address).get();
@@ -482,7 +514,9 @@ void RunServer() {
         builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
         builder.RegisterService(&service);
         std::unique_ptr<Server> server(builder.BuildAndStart());
-
+        // 创建一个etcd客户端
+        etcd::Client etcd("http://etcd:2379");
+        writeData(etcd, "/readyToRegist/node-" + std::string(std::getenv("NODE_ID")), "readyToRegist");
         std::cout << "Server listening on " << server_address  << std::endl;
         server->Wait();
     }
