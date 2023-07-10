@@ -96,6 +96,8 @@ private:
     bool isAvailable = false;
     std::unique_ptr<SearchService::Stub> stub_node[2];
     int hostNode;
+    InnerResponse rp[2];
+    Status status[2];
 public:
     SearchServiceImpl(){
         char *hostname = std::getenv("NODE_ID");
@@ -108,6 +110,7 @@ public:
         }
         if(hostNode == 2 || hostNode == 3){
             readCsv("/data/raw_data.csv");
+            printPrivate();
         }
         isAvailable = true;
     }
@@ -253,7 +256,9 @@ public:
             for (const auto& value : set) {
                 std::cout << value << " ";
             }
-            std::cout << std::endl;
+            if(set.size()){
+                std::cout << std::endl;
+            }
         }
 
         std::cout << "keywordAdgroup2vector:" << std::endl;
@@ -261,7 +266,10 @@ public:
             for (const auto& pair : map) {
                 std::cout << pair.first << ": (" << ID2adgroup[pair.second.first] << ", " << pair.second.second << ") ";
             }
-            std::cout << std::endl;
+            if(map.size()){
+                std::cout << std::endl;
+            }
+            
         }
 
         std::cout << "keywordAdgroup2price:" << std::endl;
@@ -269,7 +277,9 @@ public:
             for (const auto& pair : map) {
                 std::cout << pair.first << ":" << ID2adgroup[pair.second] << " ";
             }
-            std::cout << std::endl;
+            if(map.size()){
+                std::cout << std::endl;
+            }
         }
 
         // std::cout << "adgroup2price:" << std::endl;
@@ -305,8 +315,7 @@ public:
     }
     
     Status Get(ServerContext * context, const Request* request, InnerResponse* response) override {
-        // 作为示例，我们只是简单地返回一些假数据。
-        // 假设我们找到了两个广告单元
+        std::cout << "开始了一次get请求" << std::endl;
         google::protobuf::RepeatedField<uint64_t> userKeywords = request->keywords();
         google::protobuf::RepeatedField<float> context_vector = request->context_vector();
         std::pair<float, float> userVector = std::make_pair(context_vector[0], context_vector[1]);
@@ -325,14 +334,14 @@ public:
             }
         }
         
-        // 输出过滤后的可行字段列表
-        // for(int i = 0; i < adgroupUseful.size(); i++)
-        // {
-        //     for(auto &j:adgroupUseful[i])
-        //     {
-        //         std::cout<<ID2adgroup[j]<<std::endl;
-        //     }
-        // }
+        //输出过滤后的可行字段列表
+        for(int i = 0; i < adgroupUseful.size(); i++)
+        {
+            for(auto &j:adgroupUseful[i])
+            {
+                std::cout<<ID2adgroup[j]<<std::endl;
+            }
+        }
 
         // 过滤完可行的字段列表之后应该要合并
         std::unordered_set<uint32_t> intersection = adgroupUseful[0];
@@ -368,15 +377,15 @@ public:
             }
             if(adGroupPQ.size() < topn+1){
                 adGroupPQ.push(nowAdgroup);
-                // std::cout<<"1:"<<nowAdgroup.adgroup_id<<std::endl;
-                // std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+                std::cout<<"1:"<<nowAdgroup.adgroup_id<<std::endl;
+                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
             }
             else if(nowAdgroup < adGroupPQ.top()){
-                // std::cout<<"adGroupPQ.top().score:"<<adGroupPQ.top().score<<std::endl;
+                std::cout<<"adGroupPQ.top().score:"<<adGroupPQ.top().score<<std::endl;
                 adGroupPQ.pop();
                 adGroupPQ.push(nowAdgroup);
-                // std::cout<<"2:"<<nowAdgroup.adgroup_id<<std::endl;
-                // std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+                std::cout<<"2:"<<nowAdgroup.adgroup_id<<std::endl;
+                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
             }
         }
         int PQsize = adGroupPQ.size();
@@ -389,7 +398,7 @@ public:
             adgroup->set_ctr(nowAdgroup.ctr);
             adgroup->set_adgroup_id(nowAdgroup.adgroup_id);
         }
-
+        std::cout << "结束了一次get请求" << std::endl;
         return Status::OK;
     }
     // 合并两个优先队列并返回去重后的 topn 个元素的优先队列
@@ -398,6 +407,7 @@ public:
         std::set<AdGroup> distinctElements;
         AdGroup nowAdgroup;
         for(int i = 0 ; i < rp1.adgroups().size() ; i ++){
+            std::cout << rp1.adgroups()[i].adgroup_id() << " ";
             nowAdgroup.adgroup_id = rp1.adgroups()[i].adgroup_id();
             nowAdgroup.score = rp1.adgroups()[i].score();
             nowAdgroup.price = rp1.adgroups()[i].price();
@@ -407,7 +417,9 @@ public:
                 distinctElements.insert(nowAdgroup);
             }
         }
+        std::cout << std::endl;
         for(int i = 0 ; i < rp2.adgroups().size() ; i ++){
+            std::cout << rp2.adgroups()[i].adgroup_id() << " ";
             nowAdgroup.adgroup_id = rp2.adgroups()[i].adgroup_id();
             nowAdgroup.score = rp2.adgroups()[i].score();
             nowAdgroup.price = rp2.adgroups()[i].price();
@@ -417,6 +429,7 @@ public:
                 distinctElements.insert(nowAdgroup);
             }
         }
+        std::cout << std::endl;
         for(auto &it:distinctElements)
         {
             mergedPQ.push(it);
@@ -431,20 +444,22 @@ public:
 
     Status Search(ServerContext* context, const Request* request, Response* response) override {
         uint32_t topn = request->topn();
-        InnerResponse rp[2];
-        Status status[2];
+        
         for(int i = 0 ; i <= 1 ; i++){
+            std::cout << "开始读取节点 "<< i+2 <<std::endl;
             status[i] = stub_node[i]->Get(&clientContext[i], *request, &rp[i]);
+            std::cout << "结束读取节点 "<< i+2 <<std::endl;
         }
-
+        std::cout << "开始合并 " <<std::endl;
         std::priority_queue<AdGroup> adGroupPQ = mergeAndDistinctAdGroup(rp[0], rp[1], topn);
-
+        std::cout << "结束合并 " << adGroupPQ.size() << std::endl;
         uint64_t responseAdgroup[topn+1];
         uint64_t responsePrice[topn+1];
-        if(adGroupPQ.size() <= 1){
+        if(adGroupPQ.size() < 1){
             return Status::OK;
         }
         AdGroup nowAdgroup = adGroupPQ.top();
+        std::cout << "nowAdgroup.adgroup_id "<< nowAdgroup.adgroup_id <<std::endl;
         float score = nowAdgroup.score;
         if(adGroupPQ.size() >= topn+1){
             adGroupPQ.pop();
@@ -502,8 +517,6 @@ void RunServer() {
         std::cout << "Server listening on " << server_address  << std::endl;
         
     }
-
-
     server->Wait();
 }
 
