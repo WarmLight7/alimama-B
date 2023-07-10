@@ -41,9 +41,6 @@ message AdgroupMessage {
 message InnerResponse {
   repeated AdgroupMessage adgroups = 1;
 }
-service Greeter {
-  rpc Get(Request) returns (InnerResponse) {}
-}
 message Response {
   // 广告单元id
   repeated uint64 adgroup_ids = 1;
@@ -54,5 +51,6 @@ message Response {
 
 service SearchService {
   rpc Search(Request) returns (Response) {}
+  rpc Get(Request) returns (InnerResponse) {}
 }
 
