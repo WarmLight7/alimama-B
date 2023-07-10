@@ -25,11 +25,9 @@ using alimama::proto::Request;
 using alimama::proto::Response;
 using alimama::proto::SearchService;
 using alimama::proto::InnerResponse;
-<<<<<<< HEAD
-=======
-using alimama::proto::Greeter;
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
 using alimama::proto::AdgroupMessage;
+using alimama::proto::AvailabilityRequest;
+using alimama::proto::AvailabilityResponse;
 
 
 #include <sys/socket.h>
@@ -110,10 +108,10 @@ struct AdGroup {
     }
 };
 
-<<<<<<< HEAD
 class SearchServiceImpl final : public SearchService::Service {
 private:
     grpc::ClientContext clientContext[2];
+    bool isAvailable = false;
     std::unique_ptr<SearchService::Stub> stub_node[2];
     std::unordered_map<uint64_t, uint32_t> keywordID;
     std::unordered_map<uint64_t, uint32_t> adgroupID;
@@ -123,27 +121,48 @@ private:
     std::vector<std::unordered_map<uint32_t, uint32_t> > keywordAdgroup2price;
     // std::map<uint32_t, uint32_t> adgroup2price;
     std::unordered_map<uint32_t, std::bitset<24> > adgroup2timings;  //使用2^24次存储 用int就够 
+    
+    int hostNode;
 public:
     SearchServiceImpl(){
-        for (int i = 0; i <= 1; i++){
-            std::string distNode = "node-" + std::to_string(i+2) + ":50051";
-            stub_node[i] = SearchService::NewStub(grpc::CreateChannel(distNode, grpc::InsecureChannelCredentials()));
+        char *hostname = std::getenv("NODE_ID");
+        hostNode = std::stoi(hostname);
+        if(hostNode == 1){
+                for (int i = 0; i <= 1; i++){
+                std::string distNode = "node-" + std::to_string(i+2) + ":50051";
+                stub_node[i] = SearchService::NewStub(grpc::CreateChannel(distNode, grpc::InsecureChannelCredentials()));
+            }
         }
+        if(hostNode == 2 || hostNode == 3){
+            readCsv("/data/raw_data.csv");
+        }
+        isAvailable = true;
     }
-=======
-class GreeterServiceImpl final : public Greeter::Service {
-private:
-    std::map<uint64_t, uint32_t> keywordID;
-    std::map<uint64_t, uint32_t> adgroupID;
-    std::map<uint32_t, uint64_t> ID2adgroup;
-    std::vector<std::set<uint32_t>> keywordAdgroupSet;
-    std::vector<std::map<uint32_t, std::pair<float, float> > > keywordAdgroup2vector; 
-    std::vector<std::map<uint32_t, uint32_t> > keywordAdgroup2price;
-    // std::map<uint32_t, uint32_t> adgroup2price;
-    std::map<uint32_t, std::bitset<24> > adgroup2timings;  //使用2^24次存储 用int就够 
-public:
-  //转换判断类型
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
+    Status CheckAvailability(ServerContext* context, const AvailabilityRequest* request, AvailabilityResponse* response) override {
+        // 根据可用性设置响应字段
+        if (isAvailable) {
+            response->set_available(true);
+        } else {
+            response->set_available(false);
+        }
+
+        return Status::OK;
+    }
+    void WaitService() {
+        AvailabilityRequest request;
+        AvailabilityResponse response;
+
+        ClientContext context;
+        for(int i = 0 ; i < 1 ; i++){
+            Status status = stub_node[i]->CheckAvailability(&context, request, &response);
+            while(!status.ok() || !response.available()){
+                status = stub_node[i]->CheckAvailability(&context, request, &response);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
+        
+        
+    }
     std::bitset<24> timings2bitset(std::string& timings, uint8_t status){
         timings.erase(std::remove(timings.begin(), timings.end(), ','), timings.end());
         std::bitset<24> timing(timings);
@@ -206,11 +225,7 @@ public:
                 keywordAdgroupSet[keyword].insert(adgroup);
             }
             else{
-<<<<<<< HEAD
                 keywordAdgroupSet.emplace_back(std::unordered_set<uint32_t>{});
-=======
-                keywordAdgroupSet.emplace_back(std::set<uint32_t>{});
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
                 keywordAdgroupSet[keyword].insert(adgroup);
             }
             
@@ -218,11 +233,7 @@ public:
                 keywordAdgroup2price[keyword][adgroup] = price;
             }
             else{
-<<<<<<< HEAD
                 keywordAdgroup2price.emplace_back(std::unordered_map<uint32_t, uint32_t >{});
-=======
-                keywordAdgroup2price.emplace_back(std::map<uint32_t, uint32_t >{});
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
                 keywordAdgroup2price[keyword][adgroup] = price;
             }
             
@@ -236,11 +247,7 @@ public:
                 keywordAdgroup2vector[keyword][adgroup] = itemVector;
             }
             else{
-<<<<<<< HEAD
                 keywordAdgroup2vector.emplace_back(std::unordered_map<uint32_t, std::pair<float, float> >{});
-=======
-                keywordAdgroup2vector.emplace_back(std::map<uint32_t, std::pair<float, float> >{});
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
                 keywordAdgroup2vector[keyword][adgroup] = itemVector;
             }
             rowNum++;
@@ -248,20 +255,11 @@ public:
     }
    
     void readCsv(const std::string& path){
-        char *hostname = std::getenv("NODE_ID");
-        int hostNode = std::stoi(hostname);
         int start_row = 0;  // 起始行
-<<<<<<< HEAD
-        int end_row = 35000000;  
-        if(hostNode == 3){
-            start_row += 35000000;
-            end_row += 35000000;
-=======
         int end_row = 350000000;  
         if(hostNode == 3){
             start_row += 350000000;
             end_row += 350000000;
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
         }
         read_csv_rows(path, start_row, end_row);
     }
@@ -310,15 +308,6 @@ public:
             std::cout << ID2adgroup[pair.first] << ": " << pair.second << std::endl;
         }
     }
-<<<<<<< HEAD
-=======
-    GreeterServiceImpl() {
-        std::cout << "开始读取csv" << std::endl;
-        readCsv("/data/raw_data.csv");
-        std::cout << "读取csv成功" << std::endl;
-        //printPrivate();
-    }
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
 
     float dot_product(const std::pair<float, float>& A, const std::pair<float, float>& B) {
         return A.first * B.first + A.second * B.second;
@@ -352,11 +341,7 @@ public:
         
         int keywordLength = userKeywords.size();
         // 首先根据hour过滤出可行的字段列表
-<<<<<<< HEAD
         std::vector<std::unordered_set<uint32_t> > adgroupUseful(keywordLength, std::unordered_set<uint32_t>{});
-=======
-        std::vector<std::set<uint32_t> > adgroupUseful(keywordLength, std::set<uint32_t>{});
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
         for(int userKeywordid = 0 ; userKeywordid < keywordLength ; userKeywordid++){ // 遍历关键字
             uint64_t userKeyword = userKeywords[userKeywordid];
             for(const auto& adgroup : keywordAdgroupSet[keywordID[userKeyword]]) {  // 遍历关键字下的所有adgroupid
@@ -367,26 +352,19 @@ public:
         }
         
         // 输出过滤后的可行字段列表
-        for(int i = 0; i < adgroupUseful.size(); i++)
-        {
-            for(auto &j:adgroupUseful[i])
-            {
-                std::cout<<ID2adgroup[j]<<std::endl;
-            }
-        }
+        // for(int i = 0; i < adgroupUseful.size(); i++)
+        // {
+        //     for(auto &j:adgroupUseful[i])
+        //     {
+        //         std::cout<<ID2adgroup[j]<<std::endl;
+        //     }
+        // }
 
         // 过滤完可行的字段列表之后应该要合并
-<<<<<<< HEAD
         std::unordered_set<uint32_t> intersection = adgroupUseful[0];
         for (std::size_t i = 1; i < adgroupUseful.size(); ++i) {
             std::unordered_set<uint32_t> current_set = adgroupUseful[i];
             std::unordered_set<uint32_t> new_intersection;
-=======
-        std::set<uint32_t> intersection = adgroupUseful[0];
-        for (std::size_t i = 1; i < adgroupUseful.size(); ++i) {
-            std::set<uint32_t> current_set = adgroupUseful[i];
-            std::set<uint32_t> new_intersection;
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
             // 取交集nowAdgroup.price
             std::set_intersection(intersection.begin(), intersection.end(),
                                 current_set.begin(), current_set.end(),
@@ -439,22 +417,6 @@ public:
 
         return Status::OK;
     }
-<<<<<<< HEAD
-=======
-};
-
-class SearchServiceImpl final : public SearchService::Service {
-private:
-    grpc::ClientContext clientContext[2];
-    std::unique_ptr<Greeter::Stub> stub_node[2];
-public:
-    SearchServiceImpl(){
-        for (int i = 0; i <= 1; i++){
-            std::string distNode = "node-" + std::to_string(i+2) + ":50051";
-            stub_node[i] = Greeter::NewStub(grpc::CreateChannel(distNode, grpc::InsecureChannelCredentials()));
-        }
-    }
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
     // 合并两个优先队列并返回去重后的 topn 个元素的优先队列
     std::priority_queue<AdGroup> mergeAndDistinctAdGroup(InnerResponse& rp1, InnerResponse& rp2, int topn) {
         std::priority_queue<AdGroup> mergedPQ;
@@ -530,6 +492,7 @@ public:
 };
 
 void RunServer() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
     std::string env_var_str = std::string("0.0.0.0");
     std::string local_ip = getLocalIP();
     std::cout << "local_ip " << local_ip << std::endl;
@@ -538,34 +501,23 @@ void RunServer() {
     std::string external_address = local_ip + std::string(":") + std::to_string(kPort);
     std::string server_address(std::string("0.0.0.0:") + std::to_string(kPort));
     std::string key = std::string("/services/searchservice");
+    
+    
+    SearchServiceImpl service;
+    ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(&service);
+
+    std::unique_ptr<Server> server(builder.BuildAndStart());
     char *hostname = std::getenv("NODE_ID");
     int hostNode = std::stoi(hostname);
+    std::cout << "hostNode:" << hostNode << std::endl;
+    std::cout << "external_address " << external_address << std::endl;
     if(hostNode == 1){
-        SearchServiceImpl service;
-        ServerBuilder builder;
-        builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-        builder.RegisterService(&service);
-
-        std::unique_ptr<Server> server(builder.BuildAndStart());
-    
-        // 创建一个etcd客户端
+        service.WaitService();
+        //创建一个etcd客户端
         etcd::Client etcd("http://etcd:2379");
-        
-<<<<<<< HEAD
-        // std::string node2, node3;
-        // while(node2 == "" || node3 == ""){
-        //     if(node2 == "") node2 = readData(etcd,"/readyToRegist/node-2");
-        //     if(node3 == "") node3 = readData(etcd,"/readyToRegist/node-3");
-        // }
-=======
-        std::string node2, node3;
-        while(node2 == "" || node3 == ""){
-            if(node2 == "") node2 = readData(etcd,"/readyToRegist/node-2");
-            if(node3 == "") node3 = readData(etcd,"/readyToRegist/node-3");
-        }
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
-
-
+    
         // 将服务地址注册到etcd中
         auto response = etcd.set(key, external_address).get();
         if (response.is_ok()) {
@@ -575,25 +527,9 @@ void RunServer() {
         }
 
         std::cout << "Server listening on " << server_address  << std::endl;
-        server->Wait();
+        
     }
-    else{
-<<<<<<< HEAD
-        SearchServiceImpl service;
-=======
-        GreeterServiceImpl service;
->>>>>>> 57729e7fc914cf02e3cba591582b8dc21cf00d90
-        ServerBuilder builder;
-        builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-        builder.RegisterService(&service);
-        std::unique_ptr<Server> server(builder.BuildAndStart());
-        // 创建一个etcd客户端
-        etcd::Client etcd("http://etcd:2379");
-        writeData(etcd, "/readyToRegist/node-" + std::string(std::getenv("NODE_ID")), "readyToRegist");
-        std::cout << "Server listening on " << server_address  << std::endl;
-        server->Wait();
-    }
-
+    server->Wait();
     
 }
 
