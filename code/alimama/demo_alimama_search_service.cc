@@ -25,6 +25,7 @@ using alimama::proto::Request;
 using alimama::proto::Response;
 using alimama::proto::SearchService;
 using alimama::proto::InnerResponse;
+
 using alimama::proto::AdgroupMessage;
 using alimama::proto::AvailabilityRequest;
 using alimama::proto::AvailabilityResponse;
@@ -365,6 +366,7 @@ public:
         for (std::size_t i = 1; i < adgroupUseful.size(); ++i) {
             std::unordered_set<uint32_t> current_set = adgroupUseful[i];
             std::unordered_set<uint32_t> new_intersection;
+
             // 取交集nowAdgroup.price
             std::set_intersection(intersection.begin(), intersection.end(),
                                 current_set.begin(), current_set.end(),
@@ -517,7 +519,8 @@ void RunServer() {
         service.WaitService();
         //创建一个etcd客户端
         etcd::Client etcd("http://etcd:2379");
-    
+
+
         // 将服务地址注册到etcd中
         auto response = etcd.set(key, external_address).get();
         if (response.is_ok()) {
