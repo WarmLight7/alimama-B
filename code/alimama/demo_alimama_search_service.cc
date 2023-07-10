@@ -490,8 +490,8 @@ void RunServer() {
     if(hostNode == 1){
         //创建一个etcd客户端
         etcd::Client etcd("http://etcd:2379");
-    
-        // 将服务地址注册到etcd中
+
+        // 将服务地址注册到etcd中mashide
         auto response = etcd.set(key, external_address).get();
         if (response.is_ok()) {
             std::cout << "Service registration successful.\n";
@@ -502,6 +502,7 @@ void RunServer() {
         std::cout << "Server listening on " << server_address  << std::endl;
         
     }
+
 
     server->Wait();
 }
