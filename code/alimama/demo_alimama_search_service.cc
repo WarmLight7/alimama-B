@@ -41,33 +41,6 @@ using alimama::proto::AvailabilityResponse;
 #include <bits/stdc++.h>
 #include "csv.h"
 
-
-// etcd写
-void writeData(etcd::Client& etcd, const std::string& key, const std::string& value) {
-    etcd::Response response = etcd.set(key, value).get();
-
-    if (response.is_ok()) {
-        std::cout << "etcd写入成功" << std::endl;
-    } else {
-        std::cerr << "etcd写入失败: " << response.error_message() << std::endl;
-    }
-}
-
-// etcd读
-std::string readData(etcd::Client& etcd, const std::string& key) {
-    pplx::task<etcd::Response> responseTask = etcd.get(key);
-    responseTask.wait(); // 等待任务完成
-
-    etcd::Response response = responseTask.get();
-
-    if (response.is_ok()) {
-        return response.value().as_string();
-    } else {
-        return "";
-    }
-    return "";
-}
-
 std::string getLocalIP() {
     struct ifaddrs *ifAddrStruct = NULL;
     void *tmpAddrPtr = NULL;
@@ -87,7 +60,6 @@ std::string getLocalIP() {
     }
     return "";
 }
-
 struct AdGroup {
     float score;
     float price;
@@ -108,21 +80,21 @@ struct AdGroup {
         return adgroup_id > other.adgroup_id;
     }
 };
+    
+std::unordered_map<uint64_t, uint32_t> keywordID;
+std::unordered_map<uint64_t, uint32_t> adgroupID;
+std::unordered_map<uint32_t, uint64_t> ID2adgroup;
+std::vector<std::unordered_set<uint32_t> > keywordAdgroupSet(1100000, std::unordered_set<uint32_t>{});
+std::vector<std::unordered_map<uint32_t, std::pair<float, float> > > keywordAdgroup2vector(1100000, std::unordered_map<uint32_t, std::pair<float, float> >{}); 
+std::vector<std::unordered_map<uint32_t, uint32_t> > keywordAdgroup2price(1100000, std::unordered_map<uint32_t, uint32_t>{}); 
+// std::map<uint32_t, uint32_t> adgroup2price;
+std::unordered_map<uint32_t, std::bitset<24> > adgroup2timings;  //使用2^24次存储 用int就够 
 
 class SearchServiceImpl final : public SearchService::Service {
 private:
     grpc::ClientContext clientContext[2];
     bool isAvailable = false;
     std::unique_ptr<SearchService::Stub> stub_node[2];
-    std::unordered_map<uint64_t, uint32_t> keywordID;
-    std::unordered_map<uint64_t, uint32_t> adgroupID;
-    std::unordered_map<uint32_t, uint64_t> ID2adgroup;
-    std::vector<std::unordered_set<uint32_t>> keywordAdgroupSet;
-    std::vector<std::unordered_map<uint32_t, std::pair<float, float> > > keywordAdgroup2vector; 
-    std::vector<std::unordered_map<uint32_t, uint32_t> > keywordAdgroup2price;
-    // std::map<uint32_t, uint32_t> adgroup2price;
-    std::unordered_map<uint32_t, std::bitset<24> > adgroup2timings;  //使用2^24次存储 用int就够 
-    
     int hostNode;
 public:
     SearchServiceImpl(){
@@ -256,11 +228,12 @@ public:
     }
    
     void readCsv(const std::string& path){
+        int len = 350000000;
         int start_row = 0;  // 起始行
-        int end_row = 350000000;  
+        int end_row = len;  
         if(hostNode == 3){
-            start_row += 350000000;
-            end_row += 350000000;
+            start_row += len;
+            end_row += len;
         }
         read_csv_rows(path, start_row, end_row);
     }
@@ -494,7 +467,6 @@ public:
 };
 
 void RunServer() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
     std::string env_var_str = std::string("0.0.0.0");
     std::string local_ip = getLocalIP();
     std::cout << "local_ip " << local_ip << std::endl;
@@ -503,23 +475,21 @@ void RunServer() {
     std::string external_address = local_ip + std::string(":") + std::to_string(kPort);
     std::string server_address(std::string("0.0.0.0:") + std::to_string(kPort));
     std::string key = std::string("/services/searchservice");
-    
-    
+
     SearchServiceImpl service;
     ServerBuilder builder;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
     builder.RegisterService(&service);
 
     std::unique_ptr<Server> server(builder.BuildAndStart());
+
     char *hostname = std::getenv("NODE_ID");
     int hostNode = std::stoi(hostname);
     std::cout << "hostNode:" << hostNode << std::endl;
     std::cout << "external_address " << external_address << std::endl;
     if(hostNode == 1){
-        service.WaitService();
         //创建一个etcd客户端
         etcd::Client etcd("http://etcd:2379");
-
 
         // 将服务地址注册到etcd中
         auto response = etcd.set(key, external_address).get();
@@ -532,38 +502,12 @@ void RunServer() {
         std::cout << "Server listening on " << server_address  << std::endl;
         
     }
+
     server->Wait();
-    
 }
 
 int main(int argc, char** argv) {
+  RunServer();
 
-    //node-1监听
-    RunServer();
-    //node-2访问
-    // std::string diskCache = "node-1:50051";
-    // std::unique_ptr<SearchService::Stub> stub_(SearchService::NewStub(grpc::CreateChannel(diskCache, grpc::InsecureChannelCredentials())));
-    // Request request;
-
-    // request.add_keywords(2916200016);
-    // request.add_context_vector(0.351177);
-    // request.add_context_vector(0.936309);
-    // request.set_hour(7);
-    // request.set_topn(2);
-
-    // Response reply;
-    // grpc::ClientContext context;
-    // std::cout << "正在读取..."<< std::endl;
-    // Status status = stub_->Search(&context, request, &reply);
-    // for(const auto& adgroup_id : reply.adgroup_ids())
-    // {
-    //     std::cout << "adgroup_id:"<< adgroup_id << std::endl;
-    // }
-    // for(const auto& price : reply.prices())
-    // {
-    //     std::cout << "price:"<< price << std::endl;
-    // }
-
-    // 应响应输出644960096148,1710671559561	27435,39778
   return 0;
 }

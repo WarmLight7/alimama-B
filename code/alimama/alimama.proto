@@ -49,7 +49,18 @@ message Response {
   repeated uint64 prices = 2;
 }
 
+message AvailabilityRequest {
+  // 定义消息的字段
+  // ...
+}
+
+message AvailabilityResponse {
+  // 定义响应消息的字段
+  // ...
+  bool available = 1;
+}
 service SearchService {
   rpc Search(Request) returns (Response) {}
   rpc Get(Request) returns (InnerResponse) {}
+  rpc CheckAvailability(AvailabilityRequest) returns (AvailabilityResponse) {}
 }
