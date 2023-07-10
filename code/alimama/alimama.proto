@@ -53,4 +53,3 @@ service SearchService {
   rpc Search(Request) returns (Response) {}
   rpc Get(Request) returns (InnerResponse) {}
 }
-
