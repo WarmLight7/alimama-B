@@ -197,22 +197,24 @@ public:
             std::cout << rowNum << " " << startRow << " " << endRow << std::endl;
         }
         
-        reader.set_file_line(startRow);
-        int currentRow = startRow;
+        int currentRow = 0;
         uint64_t keyword,adgroup,price,campaign_id,item_id;
         uint8_t status;
         std::vector<uint8_t> timings(24, 0);
         std::pair<float, float> itemVector;
         std::string timingString, itemVectorString;
-
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
         while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
             {
                 std::lock_guard<std::mutex> keywordIDLock(keywordIDMutex);
                 if (keywordID.find(keyword) == keywordID.end()) {
                     keywordID[keyword] = keywordID.size();
                 }
-                keyword = keywordID[keyword];
             }
+            keyword = keywordID[keyword];
             {
                 std::lock_guard<std::mutex> adgroupIDLock(adgroupIDMutex);
                 if (adgroupID.find(adgroup) == adgroupID.end()) {
@@ -220,8 +222,8 @@ public:
                     std::lock_guard<std::mutex> ID2adgroupLock(ID2adgroupMutex);
                     ID2adgroup[adgroupID.size() - 1] = adgroup;
                 }
-                adgroup = adgroupID[adgroup];
             }
+            adgroup = adgroupID[adgroup];
             {
                 std::lock_guard<std::mutex> keywordAdgroupSetLock(keywordAdgroupSetMutex);
                 if (keywordAdgroupSet.size() > keyword) {
@@ -260,11 +262,12 @@ public:
                 }
             }
             rowNum++;
+            currentRow++;
         }
     }
    
     void readCsv(const std::string& path){
-        int len = 3500000;
+        int len = 350000000;
         int startRow = 0;  // 起始行
         int endRow = len;  
         if(hostNode == 3){
@@ -510,35 +513,49 @@ public:
 
     Status Search(ServerContext* context, const Request* request, Response* response) override {
         uint32_t topn = request->topn();
-
-        // grpc::ClientContext clientContext[2];
+        if(printFlag){
+            std::cout << "开始一次查询" << std::endl;
+        }
+        
+        // std::unique_ptr<grpc::ClientAsyncResponseReader<InnerResponse>> responseReaders[2];
         // grpc::CompletionQueue cq;
         // grpc::Status status[2];
         // InnerResponse rp[2];
-        // std::unique_ptr<grpc::ClientAsyncResponseReader<InnerResponse> > responseReader[2];
+        // grpc::ClientContext clientContext[2];
 
-        // stub_node[0]->AsyncGet(&clientContext[0], *request, &cq);
-        // stub_node[1]->AsyncGet(&clientContext[1], *request, &cq);
-
+        // for (int i = 0; i < 2; ++i) {
+        //     responseReaders[i] = stub_node[i]->AsyncGet(&clientContext[i], *request, &cq);
+        // }
 
         // bool finish = false;
         // while (!finish) {
-        //     std::cout << finish << std::endl;
         //     void* tag = nullptr;
         //     bool ok = false;
 
+        //     // 等待下一个异步事件完成
         //     cq.Next(&tag, &ok);
-        //     std::cout << 1 << std::endl;
-        //     if (tag == &responseReader[0]) {
-        //         responseReader[0]->Finish(&rp[0], &status[0], (void*)&responseReader[0]);
-        //     } else if (tag == &responseReader[1]) {
-        //         responseReader[1]->Finish(&rp[1], &status[1], (void*)&responseReader[1]);
+
+        //     if (ok) {
+        //         for (int i = 0; i < 2; ++i) {
+        //             if (tag == responseReaders[i].get()) {
+        //                 // 处理响应
+        //                 responseReaders[i]->Finish(&rp[i], &status[i], (void*)&responseReaders[i]);
+        //                 break;
+        //             }
+        //         }
         //     }
-        //     std::cout << 2 << std::endl;
-        //     if (status[0].ok() && status[1].ok()) {
-        //         finish = true;
+
+        //     // 判断是否所有异步请求都已完成
+        //     finish = true;
+        //     for (int i = 0; i < 2; ++i) {
+        //         if (!status[i].ok()) {
+        //             finish = false;
+        //             break;
+        //         }
         //     }
         // }
+
+        
 
 
         InnerResponse rp[2];
@@ -549,6 +566,9 @@ public:
 
         }
 
+        if(printFlag){
+            std::cout << "读取成功" << std::endl;
+        }
         std::priority_queue<AdGroup> adGroupPQ = mergeAndDistinctAdGroup(rp[0], rp[1], topn);
 
         uint64_t responseAdgroup[topn+1];
