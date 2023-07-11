@@ -20,6 +20,7 @@ using grpc::ServerContext;
 using grpc::ClientContext;
 using grpc::Status;
 using grpc::ServerCompletionQueue;
+using grpc::ClientAsyncResponseReader;
 
 using alimama::proto::Request;
 using alimama::proto::Response;
@@ -90,14 +91,22 @@ std::vector<std::unordered_map<uint32_t, uint32_t> > keywordAdgroup2price(110000
 // std::map<uint32_t, uint32_t> adgroup2price;
 std::unordered_map<uint32_t, std::bitset<24> > adgroup2timings;  //使用2^24次存储 用int就够 
 
+std::mutex keywordIDMutex;
+std::mutex adgroupIDMutex;
+std::mutex ID2adgroupMutex;
+std::mutex keywordAdgroupSetMutex;
+std::mutex keywordAdgroup2vectorMutex;
+std::mutex keywordAdgroup2priceMutex;
+std::mutex adgroup2timingsMutex;
+
+bool printFlag = false;
+
 class SearchServiceImpl final : public SearchService::Service {
 private:
-    grpc::ClientContext clientContext[2];
     bool isAvailable = false;
     std::unique_ptr<SearchService::Stub> stub_node[2];
     int hostNode;
-    InnerResponse rp[2];
-    Status status[2];
+    
 public:
     SearchServiceImpl(){
         char *hostname = std::getenv("NODE_ID");
@@ -110,7 +119,7 @@ public:
         }
         if(hostNode == 2 || hostNode == 3){
             readCsv("/data/raw_data.csv");
-            printPrivate();
+            if(printFlag){printPrivate();}
         }
         isAvailable = true;
     }
@@ -125,14 +134,23 @@ public:
         return Status::OK;
     }
     void WaitService() {
-        AvailabilityRequest request;
-        AvailabilityResponse response;
+        AvailabilityRequest request[2];
+        AvailabilityResponse response[2];
+        ClientContext context[2];
 
-        ClientContext context;
-        for(int i = 0 ; i < 1 ; i++){
-            Status status = stub_node[i]->CheckAvailability(&context, request, &response);
-            while(!status.ok() || !response.available()){
-                status = stub_node[i]->CheckAvailability(&context, request, &response);
+        for(int i = 0 ; i < 2 ; i++){
+            
+            Status status = stub_node[i]->CheckAvailability(&context[i], request[i], &response[i]);
+            if(printFlag){
+                std::cout << "status.ok()" << status.ok() << "response.available()" << response[i].available() << std::endl;
+            }
+            
+            while(!status.ok() || !response[i].available()){
+                if(printFlag){
+                    std::cout << "status.ok()" << status.ok() << "response.available()" << response[i].available() << std::endl;
+                }
+                ClientContext tempContext;
+                status = stub_node[i]->CheckAvailability(&tempContext, request[i], &response[i]);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
@@ -172,11 +190,13 @@ public:
         ss >> result.second;
         return result;
     }
-
     void read_csv_rows(const std::string& csvFile, int startRow, int endRow ) {
         csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
         int rowNum = 0;
-        std::cout << rowNum << " " << startRow << " " << endRow << std::endl;
+        if(printFlag){
+            std::cout << rowNum << " " << startRow << " " << endRow << std::endl;
+        }
+        
         reader.set_file_line(startRow);
         int currentRow = startRow;
         uint64_t keyword,adgroup,price,campaign_id,item_id;
@@ -186,60 +206,97 @@ public:
         std::string timingString, itemVectorString;
 
         while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
-            if (keywordID.find(keyword) == keywordID.end()) {
-                keywordID[keyword] = keywordID.size();
+            {
+                std::lock_guard<std::mutex> keywordIDLock(keywordIDMutex);
+                if (keywordID.find(keyword) == keywordID.end()) {
+                    keywordID[keyword] = keywordID.size();
+                }
+                keyword = keywordID[keyword];
             }
-            keyword = keywordID[keyword];
-            if (adgroupID.find(adgroup) == adgroupID.end()) {
-                adgroupID[adgroup] = adgroupID.size();
-                ID2adgroup[adgroupID.size()-1] = adgroup;
+            {
+                std::lock_guard<std::mutex> adgroupIDLock(adgroupIDMutex);
+                if (adgroupID.find(adgroup) == adgroupID.end()) {
+                    adgroupID[adgroup] = adgroupID.size();
+                    std::lock_guard<std::mutex> ID2adgroupLock(ID2adgroupMutex);
+                    ID2adgroup[adgroupID.size() - 1] = adgroup;
+                }
+                adgroup = adgroupID[adgroup];
             }
-            adgroup = adgroupID[adgroup];
-            
+            {
+                std::lock_guard<std::mutex> keywordAdgroupSetLock(keywordAdgroupSetMutex);
+                if (keywordAdgroupSet.size() > keyword) {
+                    keywordAdgroupSet[keyword].insert(adgroup);
+                }
+                else {
+                    keywordAdgroupSet.emplace_back(std::unordered_set<uint32_t>{});
+                    keywordAdgroupSet[keyword].insert(adgroup);
+                }
+            }
+            {
+                std::lock_guard<std::mutex> keywordAdgroup2priceLock(keywordAdgroup2priceMutex);
+                if (keywordAdgroup2price.size() > keyword) {
+                    keywordAdgroup2price[keyword][adgroup] = price;
+                }
+                else {
+                    keywordAdgroup2price.emplace_back(std::unordered_map<uint32_t, uint32_t>{});
+                    keywordAdgroup2price[keyword][adgroup] = price;
+                }
+            }
+            {
+                std::lock_guard<std::mutex> adgroup2timingsLock(adgroup2timingsMutex);
+                std::bitset<24> timing = timings2bitset(timingString, status);
+                adgroup2timings[adgroup] = timing;
+            }
 
-            if(keywordAdgroupSet.size() > keyword){
-                keywordAdgroupSet[keyword].insert(adgroup);
-            }
-            else{
-                keywordAdgroupSet.emplace_back(std::unordered_set<uint32_t>{});
-                keywordAdgroupSet[keyword].insert(adgroup);
-            }
-            
-            if(keywordAdgroup2price.size() > keyword){
-                keywordAdgroup2price[keyword][adgroup] = price;
-            }
-            else{
-                keywordAdgroup2price.emplace_back(std::unordered_map<uint32_t, uint32_t >{});
-                keywordAdgroup2price[keyword][adgroup] = price;
-            }
-            
-            //adgroup2price[adgroup] = price;
-
-            std::bitset<24> timing = timings2bitset(timingString, status);
-            adgroup2timings[adgroup] = timing;
-
-            itemVector = split2float(itemVectorString);
-            if(keywordAdgroup2vector.size() > keyword){
-                keywordAdgroup2vector[keyword][adgroup] = itemVector;
-            }
-            else{
-                keywordAdgroup2vector.emplace_back(std::unordered_map<uint32_t, std::pair<float, float> >{});
-                keywordAdgroup2vector[keyword][adgroup] = itemVector;
+            {
+                itemVector = split2float(itemVectorString);
+                std::lock_guard<std::mutex> keywordAdgroup2vectorLock(keywordAdgroup2vectorMutex);
+                if (keywordAdgroup2vector.size() > keyword) {
+                    keywordAdgroup2vector[keyword][adgroup] = itemVector;
+                }
+                else {
+                    keywordAdgroup2vector.emplace_back(std::unordered_map<uint32_t, std::pair<float, float>>{});
+                    keywordAdgroup2vector[keyword][adgroup] = itemVector;
+                }
             }
             rowNum++;
         }
     }
    
     void readCsv(const std::string& path){
-        int len = 350000000;
-        int start_row = 0;  // 起始行
-        int end_row = len;  
+        int len = 3500000;
+        int startRow = 0;  // 起始行
+        int endRow = len;  
         if(hostNode == 3){
-            start_row += len;
-            end_row += len;
+            startRow += len;
+            endRow += len;
         }
-        read_csv_rows(path, start_row, end_row);
+
+        std::vector<std::thread> threads;
+        int numThreads = 32; // 指定线程数
+
+        int rowsPerThread = (endRow - startRow) / numThreads;
+        int remainingRows = (endRow - startRow) % numThreads;
+        int currentRow = startRow;
+
+        for (int i = 0; i < numThreads; ++i) {
+            int rowsToRead = rowsPerThread + (i < remainingRows ? 1 : 0);
+            int threadEndRow = currentRow + rowsToRead;
+
+            threads.emplace_back([this, path, currentRow, threadEndRow]() {
+                read_csv_rows(path, currentRow, threadEndRow);
+            });
+
+            currentRow = threadEndRow;
+        }
+
+        // 等待所有线程完成
+        for (auto& thread : threads) {
+            thread.join();
+        }
+
     }
+
     void printPrivate(){
         std::cout << "keywordID:" << std::endl;
         for (const auto& pair : keywordID) {
@@ -315,7 +372,8 @@ public:
     }
     
     Status Get(ServerContext * context, const Request* request, InnerResponse* response) override {
-        std::cout << "开始了一次get请求" << std::endl;
+        if(printFlag){
+        std::cout << "开始了一次get请求" << std::endl;}
         google::protobuf::RepeatedField<uint64_t> userKeywords = request->keywords();
         google::protobuf::RepeatedField<float> context_vector = request->context_vector();
         std::pair<float, float> userVector = std::make_pair(context_vector[0], context_vector[1]);
@@ -333,7 +391,7 @@ public:
                 }
             }
         }
-        
+        if(printFlag){
         //输出过滤后的可行字段列表
         for(int i = 0; i < adgroupUseful.size(); i++)
         {
@@ -341,6 +399,7 @@ public:
             {
                 std::cout<<ID2adgroup[j]<<std::endl;
             }
+        }
         }
 
         // 过滤完可行的字段列表之后应该要合并
@@ -377,15 +436,17 @@ public:
             }
             if(adGroupPQ.size() < topn+1){
                 adGroupPQ.push(nowAdgroup);
+                if(printFlag){
                 std::cout<<"1:"<<nowAdgroup.adgroup_id<<std::endl;
-                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;}
             }
             else if(nowAdgroup < adGroupPQ.top()){
-                std::cout<<"adGroupPQ.top().score:"<<adGroupPQ.top().score<<std::endl;
                 adGroupPQ.pop();
                 adGroupPQ.push(nowAdgroup);
+                if(printFlag){
+                std::cout<<"adGroupPQ.top().score:"<<adGroupPQ.top().score<<std::endl;
                 std::cout<<"2:"<<nowAdgroup.adgroup_id<<std::endl;
-                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;
+                std::cout<<"nowAdgroup.score:"<<nowAdgroup.score<<std::endl;}
             }
         }
         int PQsize = adGroupPQ.size();
@@ -398,7 +459,8 @@ public:
             adgroup->set_ctr(nowAdgroup.ctr);
             adgroup->set_adgroup_id(nowAdgroup.adgroup_id);
         }
-        std::cout << "结束了一次get请求" << std::endl;
+        if(printFlag){
+        std::cout << "结束了一次get请求" << std::endl;}
         return Status::OK;
     }
     // 合并两个优先队列并返回去重后的 topn 个元素的优先队列
@@ -407,7 +469,8 @@ public:
         std::set<AdGroup> distinctElements;
         AdGroup nowAdgroup;
         for(int i = 0 ; i < rp1.adgroups().size() ; i ++){
-            std::cout << rp1.adgroups()[i].adgroup_id() << " ";
+            if(printFlag){
+            std::cout << rp1.adgroups()[i].adgroup_id() << " ";}
             nowAdgroup.adgroup_id = rp1.adgroups()[i].adgroup_id();
             nowAdgroup.score = rp1.adgroups()[i].score();
             nowAdgroup.price = rp1.adgroups()[i].price();
@@ -417,9 +480,11 @@ public:
                 distinctElements.insert(nowAdgroup);
             }
         }
-        std::cout << std::endl;
+        if(printFlag){
+        std::cout << std::endl;}
         for(int i = 0 ; i < rp2.adgroups().size() ; i ++){
-            std::cout << rp2.adgroups()[i].adgroup_id() << " ";
+            if(printFlag){
+            std::cout << rp2.adgroups()[i].adgroup_id() << " ";}
             nowAdgroup.adgroup_id = rp2.adgroups()[i].adgroup_id();
             nowAdgroup.score = rp2.adgroups()[i].score();
             nowAdgroup.price = rp2.adgroups()[i].price();
@@ -429,7 +494,8 @@ public:
                 distinctElements.insert(nowAdgroup);
             }
         }
-        std::cout << std::endl;
+        if(printFlag){
+        std::cout << std::endl;}
         for(auto &it:distinctElements)
         {
             mergedPQ.push(it);
@@ -444,22 +510,55 @@ public:
 
     Status Search(ServerContext* context, const Request* request, Response* response) override {
         uint32_t topn = request->topn();
-        
-        for(int i = 0 ; i <= 1 ; i++){
-            std::cout << "开始读取节点 "<< i+2 <<std::endl;
+
+        // grpc::ClientContext clientContext[2];
+        // grpc::CompletionQueue cq;
+        // grpc::Status status[2];
+        // InnerResponse rp[2];
+        // std::unique_ptr<grpc::ClientAsyncResponseReader<InnerResponse> > responseReader[2];
+
+        // stub_node[0]->AsyncGet(&clientContext[0], *request, &cq);
+        // stub_node[1]->AsyncGet(&clientContext[1], *request, &cq);
+
+
+        // bool finish = false;
+        // while (!finish) {
+        //     std::cout << finish << std::endl;
+        //     void* tag = nullptr;
+        //     bool ok = false;
+
+        //     cq.Next(&tag, &ok);
+        //     std::cout << 1 << std::endl;
+        //     if (tag == &responseReader[0]) {
+        //         responseReader[0]->Finish(&rp[0], &status[0], (void*)&responseReader[0]);
+        //     } else if (tag == &responseReader[1]) {
+        //         responseReader[1]->Finish(&rp[1], &status[1], (void*)&responseReader[1]);
+        //     }
+        //     std::cout << 2 << std::endl;
+        //     if (status[0].ok() && status[1].ok()) {
+        //         finish = true;
+        //     }
+        // }
+
+
+        InnerResponse rp[2];
+        Status status[2];
+        grpc::ClientContext clientContext[2];
+        for(int i = 0 ; i < 2 ; i++){
             status[i] = stub_node[i]->Get(&clientContext[i], *request, &rp[i]);
-            std::cout << "结束读取节点 "<< i+2 <<std::endl;
+
         }
-        std::cout << "开始合并 " <<std::endl;
+
         std::priority_queue<AdGroup> adGroupPQ = mergeAndDistinctAdGroup(rp[0], rp[1], topn);
-        std::cout << "结束合并 " << adGroupPQ.size() << std::endl;
+
         uint64_t responseAdgroup[topn+1];
         uint64_t responsePrice[topn+1];
         if(adGroupPQ.size() < 1){
             return Status::OK;
         }
         AdGroup nowAdgroup = adGroupPQ.top();
-        std::cout << "nowAdgroup.adgroup_id "<< nowAdgroup.adgroup_id <<std::endl;
+        if(printFlag){
+        std::cout << "nowAdgroup.adgroup_id "<< nowAdgroup.adgroup_id <<std::endl;}
         float score = nowAdgroup.score;
         if(adGroupPQ.size() >= topn+1){
             adGroupPQ.pop();
@@ -504,6 +603,7 @@ void RunServer() {
     std::cout << "external_address " << external_address << std::endl;
     if(hostNode == 1){
         //创建一个etcd客户端
+        service.WaitService();
         etcd::Client etcd("http://etcd:2379");
 
         // 将服务地址注册到etcd中mashide
