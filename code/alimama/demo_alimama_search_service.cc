@@ -82,12 +82,14 @@ struct AdGroup {
     }
 };
     
+std::unordered_set<uint64_t> keywordSet;
+std::unordered_set<uint64_t> adgroupSet;    
 std::unordered_map<uint64_t, uint32_t> keywordID;
 std::unordered_map<uint64_t, uint32_t> adgroupID;
 std::unordered_map<uint32_t, uint64_t> ID2adgroup;
-std::vector<std::unordered_set<uint32_t> > keywordAdgroupSet(1100000, std::unordered_set<uint32_t>{});
-std::vector<std::unordered_map<uint32_t, std::pair<float, float> > > keywordAdgroup2vector(1100000, std::unordered_map<uint32_t, std::pair<float, float> >{}); 
-std::vector<std::unordered_map<uint32_t, uint32_t> > keywordAdgroup2price(1100000, std::unordered_map<uint32_t, uint32_t>{}); 
+std::vector<std::unordered_set<uint32_t> > keywordAdgroupSet;
+std::vector<std::unordered_map<uint32_t, std::pair<float, float> > > keywordAdgroup2vector(1000000, std::unordered_map<uint32_t, std::pair<float, float> >{}); 
+std::vector<std::unordered_map<uint32_t, uint32_t> > keywordAdgroup2price(1000000, std::unordered_map<uint32_t, uint32_t>{}); 
 // std::map<uint32_t, uint32_t> adgroup2price;
 std::unordered_map<uint32_t, std::bitset<24> > adgroup2timings;  //使用2^24次存储 用int就够 
 
@@ -157,7 +159,7 @@ public:
         
         
     }
-    std::bitset<24> timings2bitset(std::string& timings, uint8_t status){
+    static std::bitset<24> timings2bitset(std::string& timings, uint8_t status){
         timings.erase(std::remove(timings.begin(), timings.end(), ','), timings.end());
         std::bitset<24> timing(timings);
         if(status == 0){
@@ -182,7 +184,7 @@ public:
         }
         return tokens;
     }
-    std::pair<float, float> split2float(const std::string& str) {
+    static std::pair<float, float> split2float(const std::string& str) {
         std::pair<float, float> result;
         std::stringstream ss(str);
         ss >> result.first;
@@ -190,6 +192,190 @@ public:
         ss >> result.second;
         return result;
     }
+    static void setReader(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            keywordSet.insert(keyword);
+            adgroupSet.insert(adgroup);
+            currentRow++;
+        }
+    }
+    static void mapReader(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            adgroup = adgroupID[adgroup];
+            keyword = keywordID[keyword];
+
+            if (keywordAdgroup2price.size() > keyword) {
+                keywordAdgroup2price[keyword][adgroup] = price;
+            }
+            else {
+                keywordAdgroup2price.emplace_back(std::unordered_map<uint32_t, uint32_t>{});
+                keywordAdgroup2price[keyword][adgroup] = price;
+            }
+
+            if(adgroup2timings.find(adgroup) != adgroup2timings.end()){
+                std::bitset<24> timing = timings2bitset(timingString, status);
+                adgroup2timings[adgroup] = timing;
+            }
+            itemVector = split2float(itemVectorString);
+            if (keywordAdgroup2vector.size() > keyword) {
+                keywordAdgroup2vector[keyword][adgroup] = itemVector;
+            }
+            else {
+                keywordAdgroup2vector.emplace_back(std::unordered_map<uint32_t, std::pair<float, float>>{});
+                keywordAdgroup2vector[keyword][adgroup] = itemVector;
+            }
+            currentRow++;
+        }
+    }
+    static void keywordIDReader(const std::string& csvFile, int startRow, int endRow){
+        
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            keywordSet.insert(keyword);
+            currentRow++;
+        }
+    }
+    static void adgroupIDReader(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            adgroupSet.insert(adgroup);
+            currentRow++;
+        }
+    }
+
+    static void keywordAdgroupSetReader(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            keyword = keywordID[keyword];
+            adgroup = adgroupID[adgroup];
+            if (keywordAdgroupSet.size() > keyword) {
+                keywordAdgroupSet[keyword].insert(adgroup);
+            }
+            else {
+                keywordAdgroupSet.emplace_back(std::unordered_set<uint32_t>{});
+                keywordAdgroupSet[keyword].insert(adgroup);
+            }
+            currentRow++;
+        }
+    }
+
+    static void keywordAdgroup2priceReader(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            keyword = keywordID[keyword];
+            adgroup = adgroupID[adgroup];
+            if (keywordAdgroup2price.size() > keyword) {
+                keywordAdgroup2price[keyword][adgroup] = price;
+            }
+            else {
+                keywordAdgroup2price.emplace_back(std::unordered_map<uint32_t, uint32_t>{});
+                keywordAdgroup2price[keyword][adgroup] = price;
+            }
+            currentRow++;
+        }
+    }
+
+    static void adgroup2timingsReader(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            adgroup = adgroupID[adgroup];
+            std::bitset<24> timing = timings2bitset(timingString, status);
+            adgroup2timings[adgroup] = timing;
+            currentRow++;
+        }
+    }
+
+    static void keywordAdgroup2vectorReader(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::pair<float, float> itemVector;
+        std::string timingString, itemVectorString;
+        int currentRow = 0;
+        while(currentRow < startRow){
+            reader.next_line();
+            currentRow++;
+        }
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            adgroup = adgroupID[adgroup];
+            keyword = keywordID[keyword];
+            itemVector = split2float(itemVectorString);
+            if (keywordAdgroup2vector.size() > keyword) {
+                keywordAdgroup2vector[keyword][adgroup] = itemVector;
+            }
+            else {
+                keywordAdgroup2vector.emplace_back(std::unordered_map<uint32_t, std::pair<float, float>>{});
+                keywordAdgroup2vector[keyword][adgroup] = itemVector;
+            }
+            currentRow++;
+        }
+    }
+
     void read_csv_rows(const std::string& csvFile, int startRow, int endRow ) {
         csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
         int rowNum = 0;
@@ -265,7 +451,43 @@ public:
             currentRow++;
         }
     }
-   
+    void preallocateMemory(){
+        const uint64_t keywordCount = 1e5;
+        const uint64_t adgroupCount = 5e5;
+        const uint64_t averageAdgroupPerKeyword = 1500;
+
+        // 预分配 keywordSet 和 adgroupSet 的内存
+        keywordSet.reserve(keywordCount);
+        adgroupSet.reserve(adgroupCount);
+
+        // 预分配 keywordID 和 adgroupID 的内存
+        keywordID.reserve(keywordCount);
+        adgroupID.reserve(adgroupCount);
+
+        // 预分配 ID2adgroup 的内存
+        ID2adgroup.reserve(adgroupCount);
+
+        // 预分配 keywordAdgroupSet 的内存
+        // keywordAdgroupSet.resize(keywordCount);
+        // for (auto& keywordAdgroup : keywordAdgroupSet) {
+        //     keywordAdgroup.reserve(averageAdgroupPerKeyword);
+        // }
+
+        // 预分配 keywordAdgroup2vector 的内存
+        keywordAdgroup2vector.resize(keywordCount);
+        for (auto& keywordAdgroup : keywordAdgroup2vector) {
+            keywordAdgroup.reserve(averageAdgroupPerKeyword);
+        }
+
+        // 预分配 keywordAdgroup2price 的内存
+        keywordAdgroup2price.resize(keywordCount);
+        for (auto& keywordAdgroup : keywordAdgroup2price) {
+            keywordAdgroup.reserve(averageAdgroupPerKeyword);
+        }
+
+        // 预分配 adgroup2timings 的内存
+        adgroup2timings.reserve(adgroupCount);
+    }
     void readCsv(const std::string& path){
         int len = 350000000;
         int startRow = 0;  // 起始行
@@ -274,29 +496,105 @@ public:
             startRow += len;
             endRow += len;
         }
-
+        preallocateMemory();
         std::vector<std::thread> threads;
-        int numThreads = 32; // 指定线程数
-
-        int rowsPerThread = (endRow - startRow) / numThreads;
-        int remainingRows = (endRow - startRow) % numThreads;
-        int currentRow = startRow;
-
-        for (int i = 0; i < numThreads; ++i) {
-            int rowsToRead = rowsPerThread + (i < remainingRows ? 1 : 0);
-            int threadEndRow = currentRow + rowsToRead;
-
-            threads.emplace_back([this, path, currentRow, threadEndRow]() {
-                read_csv_rows(path, currentRow, threadEndRow);
-            });
-
-            currentRow = threadEndRow;
+        int numThreads = 4; // 指定线程数
+        setReader(path, startRow, endRow);
+        
+        uint32_t index = 0;
+        for (const auto& keywordindex : keywordSet) {
+            keywordID[keywordindex] = index;
+            ++index;
         }
-
-        // 等待所有线程完成
-        for (auto& thread : threads) {
-            thread.join();
+        index = 0;
+        for (const auto& adgroupindex : adgroupSet) {
+            adgroupID[adgroupindex] = index;
+            ID2adgroup[index] = adgroupindex;
+            ++index;
         }
+        mapReader(path, startRow, endRow);
+        // threads.clear();
+        // numThreads = 8;
+        // rowsPerThread = (endRow - startRow) / numThreads;
+        // remainingRows = (endRow - startRow) % numThreads;
+        // currentRow = startRow;
+
+        // for (int i = 0; i < numThreads; ++i) {
+        //     int rowsToRead = rowsPerThread + (i < remainingRows ? 1 : 0);
+        //     int threadEndRow = currentRow + rowsToRead;
+
+        //     threads.emplace_back([this, path, currentRow, threadEndRow]() {
+        //         keywordAdgroupSetReader(path, currentRow, threadEndRow);
+
+        //     });
+        //     threads.emplace_back([this, path, currentRow, threadEndRow]() {
+        //         keywordAdgroup2priceReader(path, currentRow, threadEndRow);
+                
+        //     });
+        //     threads.emplace_back([this, path, currentRow, threadEndRow]() {
+        //         adgroup2timingsReader(path, currentRow, threadEndRow);
+                
+        //     });
+        //     threads.emplace_back([this, path, currentRow, threadEndRow]() {
+        //         keywordAdgroup2vectorReader(path, currentRow, threadEndRow);
+                
+        //     });
+
+        //     currentRow = threadEndRow;
+        // }
+        // for (auto& thread : threads) {
+        //     thread.join();
+        // }
+        // std::thread keywordThread([this, path, startRow, endRow]() {
+        //     keywordIDReader(path, startRow, endRow);
+        // });
+        // std::thread adgroupThread([this, path, startRow, endRow]() {
+        //     adgroupIDReader(path, startRow, endRow);
+        // });
+
+        // // 等待两个线程执行完毕
+        // keywordThread.join();
+        // adgroupThread.join();
+
+        // std::thread keywordAdgroupSetThread([this, path, startRow, endRow]() {
+        //     keywordAdgroupSetReader(path, startRow, endRow);
+        // });
+        // std::thread keywordAdgroup2priceThread([this, path, startRow, endRow]() {
+        //     keywordAdgroup2priceReader(path, startRow, endRow);
+        // });
+        // std::thread adgroup2timingsThread([this, path, startRow, endRow]() {
+        //     adgroup2timingsReader(path, startRow, endRow);
+        // });
+        // std::thread keywordAdgroup2vectorThread([this, path, startRow, endRow]() {
+        //     keywordAdgroup2vectorReader(path, startRow, endRow);
+        // });
+
+        // keywordAdgroupSetThread.join();
+        // keywordAdgroup2priceThread.join();
+        // adgroup2timingsThread.join();
+        // keywordAdgroup2vectorThread.join();
+        // std::vector<std::thread> threads;
+        // int numThreads = 32; // 指定线程数
+
+        // int rowsPerThread = (endRow - startRow) / numThreads;
+        // int remainingRows = (endRow - startRow) % numThreads;
+        // int currentRow = startRow;
+
+        // for (int i = 0; i < numThreads; ++i) {
+        //     int rowsToRead = rowsPerThread + (i < remainingRows ? 1 : 0);
+        //     int threadEndRow = currentRow + rowsToRead;
+
+        //     threads.emplace_back([this, path, currentRow, threadEndRow]() {
+        //         read_csv_rows(path, currentRow, threadEndRow);
+        //     });
+
+        //     currentRow = threadEndRow;
+        // }
+
+        // // 等待所有线程完成
+        // for (auto& thread : threads) {
+        //     thread.join();
+        // }
 
     }
 
@@ -311,15 +609,15 @@ public:
             std::cout << pair.first << ": " << pair.second << std::endl;
         }
 
-        std::cout << "keywordAdgroupSet:" << std::endl;
-        for (const auto& set : keywordAdgroupSet) {
-            for (const auto& value : set) {
-                std::cout << value << " ";
-            }
-            if(set.size()){
-                std::cout << std::endl;
-            }
-        }
+        // std::cout << "keywordAdgroupSet:" << std::endl;
+        // for (const auto& set : keywordAdgroupSet) {
+        //     for (const auto& value : set) {
+        //         std::cout << value << " ";
+        //     }
+        //     if(set.size()){
+        //         std::cout << std::endl;
+        //     }
+        // }
 
         std::cout << "keywordAdgroup2vector:" << std::endl;
         for (const auto& map : keywordAdgroup2vector) {
@@ -388,9 +686,9 @@ public:
         std::vector<std::unordered_set<uint32_t> > adgroupUseful(keywordLength, std::unordered_set<uint32_t>{});
         for(int userKeywordid = 0 ; userKeywordid < keywordLength ; userKeywordid++){ // 遍历关键字
             uint64_t userKeyword = userKeywords[userKeywordid];
-            for(const auto& adgroup : keywordAdgroupSet[keywordID[userKeyword]]) {  // 遍历关键字下的所有adgroupid
-                if(checkHours(adgroup, hour)){
-                    adgroupUseful[userKeywordid].insert(adgroup);
+            for(const auto& pair : keywordAdgroup2price[keywordID[userKeyword]]) {  // 遍历关键字下的所有adgroupid
+                if(checkHours(pair.first, hour)){
+                    adgroupUseful[userKeywordid].insert(pair.first);
                 }
             }
         }
