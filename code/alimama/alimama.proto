@@ -62,5 +62,6 @@ message AvailabilityResponse {
 service SearchService {
   rpc Search(Request) returns (Response) {}
   rpc Get(Request) returns (InnerResponse) {}
+  //rpc AsyncGet(Request) returns (InnerResponse) {}
   rpc CheckAvailability(AvailabilityRequest) returns (AvailabilityResponse) {}
 }
