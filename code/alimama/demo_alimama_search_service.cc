@@ -23,6 +23,8 @@ using grpc::ClientContext;
 using grpc::ClientAsyncResponseReader;
 using grpc::ServerAsyncResponseWriter;
 using grpc::CompletionQueue;
+using grpc::ResourceQuota;
+using grpc::ChannelArguments;
 
 
 using alimama::proto::Request;
@@ -43,6 +45,7 @@ using alimama::proto::AvailabilityResponse;
 #include <vector>
 #include <bits/stdc++.h>
 #include "csv.h"
+#define pi 3.14159265358979323846
 
 std::string getLocalIP() {
     struct ifaddrs *ifAddrStruct = NULL;
@@ -65,65 +68,32 @@ std::string getLocalIP() {
 }
 
 
-
-struct AdGroup {
-    float score;
-    float price;
-    float ctr;
-    uint64_t adgroup_id;
-    bool operator==(const AdGroup& other) const{
-        return adgroup_id == other.adgroup_id;
-    }
-    bool operator<(const AdGroup& other) const {
-        if (std::abs(score - other.score) > 1e-6) {
-            return score > other.score;
-        }
-
-        if (std::abs(price - other.price) > 1e-6) {
-            return price < other.price;
-        }
-
-        return adgroup_id > other.adgroup_id;
-    }
-};
-
-
-// bool printFlag = true;
-// const uint32_t keywordCount = 1e5+500;
-// const uint32_t adgroupCount = 5e5+500;
-// const uint32_t averageAdgroupPerKeyword = 5;
-// const uint32_t averageKeywordPerAdgroup = 1;
 bool printFlag = false;
 const uint32_t keywordCount = 1e6;
-const uint32_t adgroupCount = 5e6;
+const uint32_t adgroupCount = 2e6;
 const uint32_t averageAdgroupPerKeyword = 500;
 const uint32_t averageKeywordPerAdgroup = 100;
+float lowest = std::numeric_limits<float>::lowest();
+std::atomic<uint64_t> searchid(0);
+int tableSize = 6553500;
+int bucketSize = 100000;
+std::vector<int> hashtable(tableSize);
 
-// std::unordered_map<uint64_t, uint32_t> keywordID(keywordCount);
-// std::unordered_map<uint64_t, uint32_t> adgroupID(adgroupCount);
-// std::vector<uint64_t> ID2adgroup(adgroupCount);
-// std::vector<std::unordered_set<uint32_t> > keywordAdgroupSet(keywordCount, std::unordered_set<uint32_t>{});
-
-// std::vector<std::string> adgroup2timingstring(adgroupCount, std::string(50, '\0'));
-// std::vector<uint8_t> adgroup2status(adgroupCount);
-// std::vector<std::unordered_map<uint32_t, std::string > > adgroupKeyWord2vectorstring(adgroupCount, std::unordered_map<uint32_t, std::string>{});
-// std::vector<std::unordered_map<uint32_t, uint32_t> > adgroupKeyword2price(adgroupCount, std::unordered_map<uint32_t, uint32_t>{});
+// std::unique_ptr<std::unordered_map<uint64_t, uint32_t>> keywordIDPtr;
+// std::unique_ptr<std::unordered_map<uint64_t, uint32_t>> adgroupIDPtr;
+// std::unique_ptr<std::vector<uint64_t>> ID2adgroupPtr;
+// std::unique_ptr<std::vector<std::bitset<24>>> adgroup2timingPtr;
+// std::unique_ptr<std::vector<std::vector<uint32_t>>> adgroupKeyword2pricePtr;
+// std::unique_ptr<std::vector<std::vector<std::pair<float, float>>>> adgroupKeyword2vectorPtr;
+// std::unique_ptr<std::vector<std::unordered_map<uint32_t, uint16_t>>> adgroupKeywordidPtr;
+// std::unique_ptr<std::vector<std::vector<uint32_t>>> keywordAdgroupPtr;
 
 std::unique_ptr<std::unordered_map<uint64_t, uint32_t>> keywordIDPtr;
-std::unique_ptr<std::unordered_map<uint64_t, uint32_t>> adgroupIDPtr;
-std::unique_ptr<std::vector<uint64_t>> ID2adgroupPtr;
-std::unique_ptr<std::vector<std::bitset<24>>> adgroup2timingPtr;
-std::unique_ptr<std::vector<std::vector<uint16_t>>> adgroupKeyword2pricePtr;
-std::unique_ptr<std::vector<std::vector<std::pair<float, float>>>> adgroupKeyword2vectorPtr;
-std::unique_ptr<std::vector<std::vector<std::pair<uint32_t,uint16_t>>>> keywordAdgroupPtr;
+std::unique_ptr<std::unordered_map<uint64_t, std::bitset<24>>> adgroup2timingPtr;
+std::unique_ptr<std::vector<std::vector<uint32_t>>> keywordAdgroup2pricePtr;
+std::unique_ptr<std::vector<std::vector<std::pair<float, float>>>> keywordAdgroup2vectorPtr;
+std::unique_ptr<std::vector<std::vector<uint64_t>>> keywordAdgroupidPtr;
 
-
-// std::vector<std::vector<uint32_t>> adgroupKeyword2keywordIDPtr;
-
-// std::unique_ptr<std::vector<std::string>> adgroup2timingstringPtr;
-// std::unique_ptr<std::vector<uint8_t>> adgroup2statusPtr;
-// std::unique_ptr<std::vector<std::unordered_map<uint32_t, uint32_t>>> adgroupKeyword2pricePtr;
-// std::unique_ptr<std::vector<std::unordered_map<uint32_t, std::pair<float,float>>>> adgroupKeyword2vectorPtr;
 
 std::shared_mutex keywordIDMutex;
 std::shared_mutex adgroupIDMutex;
@@ -199,36 +169,70 @@ private:
     size_t taskCount = 0;
 };
 
-struct CompareAdgroupMessage {
-    bool operator()(const AdgroupMessage& a, const AdgroupMessage& b) const {
-        if (std::abs(a.score() - b.score()) > 1e-6) {
-            return a.score() > b.score();
+struct Adgroup {
+    float score;
+    uint32_t price;
+    float ctr;
+    uint64_t adgroup_id;
+
+    // Overloading the less-than operator ("<")
+    bool operator<(const Adgroup& other) const {
+        if (std::abs(score - other.score) > 1e-6) {
+            return score < other.score;
         }
 
-        if (std::abs(a.price() - b.price()) > 1e-6) {
-            return a.price() < b.price();
+        if (price != other.price) {
+            return price > other.price;
         }
 
-        return a.adgroup_id() > b.adgroup_id();
+        return adgroup_id < other.adgroup_id;
+    }
+
+    // Overloading the assignment operator ("=")
+    Adgroup& operator=(const Adgroup& other) {
+        if (this == &other) {
+            return *this; // Handling self-assignment
+        }
+
+        // Copying values from 'other' to the current object
+        score = other.score;
+        price = other.price;
+        ctr = other.ctr;
+        adgroup_id = other.adgroup_id;
+
+        return *this;
     }
 };
+
 
 class SearchServiceImpl final : public SearchService::Service {
 private:
     bool isAvailable = false;
     std::unique_ptr<SearchService::Stub> stub_node[2];
+    ChannelArguments channel_args; // 连接参数
     int hostNode;
+    
 public:
     SearchServiceImpl(){
         char *hostname = std::getenv("NODE_ID");
         hostNode = std::stoi(hostname);
-        if(hostNode == 1){
-                for (int i = 0; i < 2; i++){
-                std::string distNode = "node-" + std::to_string(i+2) + ":50051";
-                stub_node[i] = SearchService::NewStub(grpc::CreateChannel(distNode, grpc::InsecureChannelCredentials()));
+        int index = 0;
+
+        for(int i = 1 ; i <= 3 ; i++){
+            if(i ==  hostNode){
+                continue;
             }
+            std::string distNode = "node-" + std::to_string(i) + ":50051";
+            stub_node[index++] = SearchService::NewStub(grpc::CreateChannel(distNode, grpc::InsecureChannelCredentials()));
         }
+        // if(hostNode == 1){
+        //     for (int i = 0; i < 2; i++){
+        //         std::string distNode = "node-" + std::to_string(i+2) + ":50051";
+        //         stub_node[i] = SearchService::NewStub(grpc::CreateChannel(distNode, grpc::InsecureChannelCredentials()));
+        //     }
+        // }
         readCsv("/data/raw_data.csv");
+        
         if(printFlag){printPrivate();}
         isAvailable = true;
     }
@@ -267,38 +271,40 @@ public:
         }
     }
 
-    static std::bitset<24> timings2bitset(std::string& timings, uint8_t status){
+    static std::bitset<24> timings2bitset(std::string& timings){
         timings.erase(std::remove(timings.begin(), timings.end(), ','), timings.end());
         std::bitset<24> timing(timings);
-        if(status == 0){
-            timing.flip();
-        }
         return timing;
     }
-    int hours2int(int hour){
-        return 1 << (hour);
-    }
-    static bool checkHours(uint32_t adgroup, int hour){
-        // return (*adgroup2timingstringPtr)[adgroup][hour*2]-'0' == (*adgroup2statusPtr)[adgroup];
+
+    static bool checkHours(uint64_t adgroup, int hour){
         return (*adgroup2timingPtr)[adgroup][23-hour];
     }
 
-    //csv读取
-    std::vector<uint8_t> split2int(const std::string& str, char delimiter) {
-        std::vector<uint8_t> tokens;
-        std::stringstream ss(str);
-        std::string token;
-        while (std::getline(ss, token, delimiter)) {
-            tokens.push_back(std::stoi(token));
-        }
-        return tokens;
-    }
     static void split2float(const std::string& str, std::pair<float, float>& result) {
         std::stringstream ss(str);
         ss >> result.first;
         ss.ignore(); // 忽略逗号或其他分隔符
         ss >> result.second;
     }
+
+    void read_csv_map_time(const std::string& csvFile, int startRow, int endRow){
+        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+        if(printFlag){
+            std::cout  << " " << startRow << " " << endRow << std::endl;
+        }
+        int currentRow = 0;
+        uint64_t keyword,adgroup,price,campaign_id,item_id;
+        uint8_t status;
+        std::string timingString, itemVectorString;
+        std::bitset<24> timing;
+        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            if (adgroup2timingPtr->find(adgroup) == adgroup2timingPtr->end()) {
+                (*adgroup2timingPtr)[adgroup] = timings2bitset(timingString);
+            }
+        }
+    }
+
 
     void read_csv_map_pool(const std::string& csvFile, int startRow, int endRow , int threadNumber, int threadCount) {
         csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
@@ -308,462 +314,351 @@ public:
         int currentRow = 0;
         uint64_t keyword,adgroup,price,campaign_id,item_id;
         uint8_t status;
-        bool newadgroup;
         std::string timingString, itemVectorString;
-        std::bitset<24> timing;
         std::pair<float, float> itemVector;
-        uint8_t keywordPosition = 0;
-        uint32_t adgroupid,keywordid;
+        uint32_t keywordid;
         while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+            // if(keyword%3 != hostNode-1 || (keyword/3) % threadCount != threadNumber || status == 0){
+            if(keyword % threadCount != threadNumber || status == 0){
+                currentRow++;
+                continue;
+            }
             
             {
-                std::unique_lock<std::shared_mutex> lock(keywordIDMutex);
+                std::shared_lock<std::shared_mutex> readLock(keywordIDMutex);
                 if (keywordIDPtr->find(keyword) == keywordIDPtr->end()) {
+                    readLock.unlock(); 
+                    std::unique_lock<std::shared_mutex> writeLock(keywordIDMutex);
                     (*keywordIDPtr)[keyword] = keywordIDPtr->size();
                 }
             }
             {
-                std::shared_lock<std::shared_mutex> lock(keywordIDMutex);
+                std::shared_lock<std::shared_mutex> readLock(keywordIDMutex);
                 keywordid = (*keywordIDPtr)[keyword];
             }
-
-            if(adgroup%3 != hostNode-1 || (adgroup/3) % threadCount != threadNumber){
-                currentRow++;
-                continue;
-            }
-
-            newadgroup = false;
-
-            
             {
-                std::unique_lock<std::shared_mutex> lock(adgroupIDMutex);
-                if(adgroupIDPtr->find(adgroup) == adgroupIDPtr->end()){
-                    (*adgroupIDPtr)[adgroup] = (*adgroupIDPtr).size();
-                    newadgroup = true;
+                std::shared_lock<std::shared_mutex> readLock(adgroupKeywordMutex);
+                if (keywordAdgroup2pricePtr->size() <= keywordid) {
+                    readLock.unlock(); 
+                    std::unique_lock<std::shared_mutex> writeLock(adgroupKeywordMutex);
+                    while(keywordAdgroup2pricePtr->size() <= keywordid){
+                        (*keywordAdgroup2pricePtr).emplace_back(std::vector<uint32_t>());
+                        (*keywordAdgroup2vectorPtr).emplace_back(std::vector<std::pair<float, float>>()); 
+                        (*keywordAdgroupidPtr).emplace_back(std::vector<uint64_t>());
+                    }
                 }
             }
-            {
-                std::shared_lock<std::shared_mutex> lock(adgroupIDMutex);
-                adgroupid = (*adgroupIDPtr)[adgroup];
-            }
-            
-            if(newadgroup)
-            {
-                std::unique_lock<std::shared_mutex> lock(ID2adgroupMutex);
-                timing = timings2bitset(timingString, status);
-                if(ID2adgroupPtr->size() <= adgroupid){
-                    (*ID2adgroupPtr).emplace_back(adgroup);
-                    (*adgroup2timingPtr).emplace_back(timing);
-                }
-                else{
-                    (*ID2adgroupPtr)[adgroupid] = adgroup;
-                    (*adgroup2timingPtr)[adgroupid] = timing;
-                }
-            }
-
-            
-
-
             split2float(itemVectorString, itemVector);
-            {
-                std::unique_lock<std::shared_mutex> lock(adgroupKeywordMutex);
-                if(adgroupKeyword2pricePtr->size() <= adgroupid){
-                    (*adgroupKeyword2pricePtr).emplace_back(std::vector<uint16_t>());
-                    (*adgroupKeyword2vectorPtr).emplace_back(std::vector<std::pair<float, float>>()); 
-                }
-            }
-            {
-                std::unique_lock<std::shared_mutex> lock(keywordAdgroupMutex);
-                if(keywordAdgroupPtr->size() <= keywordid){
-                    (*keywordAdgroupPtr).emplace_back(std::vector<std::pair<uint32_t,uint16_t>>());
-                }
-                (*keywordAdgroupPtr)[keywordid].emplace_back(adgroupid, (*adgroupKeyword2pricePtr)[adgroupid].size());
-            }
+            (*keywordAdgroupidPtr)[keywordid].emplace_back(adgroup);
+            (*keywordAdgroup2pricePtr)[keywordid].emplace_back(price);
+            (*keywordAdgroup2vectorPtr)[keywordid].emplace_back(itemVector);
             
-            (*adgroupKeyword2pricePtr)[adgroupid].emplace_back(price);
-            (*adgroupKeyword2vectorPtr)[adgroupid].emplace_back(itemVector);
+            
             currentRow++;
 
         }
     }
   
-
-    
     void readCsv(const std::string& path){
         int len = 700000000;
         int startRow = 0;  // 起始行
         int endRow = len;  
-        int threadCount = 16;
+        int threadCount = 11;
         std::vector<std::thread> threads;
         for (int i = 0; i < threadCount; ++i) {
             threads.emplace_back([this, path, startRow, endRow, i, threadCount]() {
                 read_csv_map_pool(path, startRow, endRow, i, threadCount);
             });
         }
+        threads.emplace_back([this, path, startRow, endRow]() {
+            read_csv_map_time(path, startRow, endRow);
+        });
         // 等待所有线程完成
         for (auto& thread : threads) {
             thread.join();
         }
+
+
+        double r = 65535;
+        double area_1_4_circle = (pi /4) * r * r;
+        for(int i = 0 ; i < tableSize ; i++){
+            double x = 1.0*i/100;
+            double area = 0.5*(r*r) * (asin(x/r)) + 0.5*sqrt(r*r-x*x)*x;
+            int pos = area/area_1_4_circle * bucketSize;
+            hashtable[i] = pos;
+            //cout << area/area_1_4_circle * r << endl;
+        }
     }
 
     void printPrivate(){
-        //打印 keywordIDPtr
+        int index;
+        // 打印 keywordIDPtr
         std::cout << "keywordIDPtr:" << std::endl;
         for (const auto& item : *keywordIDPtr) {
             std::cout << item.first << " -> " << item.second << std::endl;
         }
-        
-        // 打印 adgroupIDPtr
-        // std::cout << "adgroupIDPtr:" << std::endl;
-        // for (const auto& item : *adgroupIDPtr) {
-        //     std::cout << item.first << " -> " << item.second << std::endl;
-        // }
-        
-        // // 打印 ID2adgroupPtr
-        // std::cout << "ID2adgroupPtr:" << std::endl;
-        // for (const auto& item : *ID2adgroupPtr) {
-        //     std::cout << item << std::endl;
-        // }
-        
-        // 打印 keywordAdgroupSetPtr
-        // std::cout << "keywordAdgroupSetPtr:" << std::endl;
-        // for (const auto& item : *keywordAdgroupSetPtr) {
-        //     if(item.size() == 0){
-        //         break;
-        //     }
-        //     std::cout << "{ ";
-        //     for (const auto& adgroup : item) {
-        //         std::cout << adgroup << " ";
-        //     }
-            
-        //     std::cout << "}" << std::endl;
-        // }
-        
-        // // 打印 adgroup2timingstringPtr
-        // std::cout << "adgroup2timingstringPtr:" << std::endl;
-        // for (const auto& item : *adgroup2timingstringPtr) {
-        //     std::cout << item << std::endl;
-        // }
-        
-        // // 打印 adgroup2statusPtr
-        // std::cout << "adgroup2statusPtr:" << std::endl;
-        // for (const auto& item : *adgroup2statusPtr) {
-        //     std::cout << static_cast<int>(item) << std::endl;
-        // }
-        
-        // 打印 adgroupKeyword2pricePtr
-        // std::cout << "adgroupKeyword2pricePtr:" << std::endl;
-        // int index = 0;
-        // for (const auto& map : *adgroupKeyword2pricePtr) {
-        //     if(map.size() == 0){
-        //         break;
-        //     }
-        //     std::cout << index << std::endl;
-        //     for (const auto& item : map) {
-        //         std::cout << item.first << " -> " << item.second << std::endl;
-        //     }
-        //     index++;
-        // }
-        
-        // // 打印 adgroupKeyword2vectorPtr
-        // std::cout << "adgroupKeyword2vectorPtr:" << std::endl;
-        // for (const auto& map : *adgroupKeyword2vectorPtr) {
-        //     for (const auto& item : map) {
-        //         std::cout << item.first << " -> (" << item.second.first << ", " << item.second.second << ")" << std::endl;
-        //     }
-        // }
-    }
-
-    static float dot_product(const std::pair<float, float>& A, const std::pair<float, float>& B) {
-        return A.first * B.first + A.second * B.second;
-    }
-
-    static float magnitude(const std::pair<float, float>& v) {
-        return std::sqrt(v.first * v.first + v.second * v.second);
     }
 
     static float getCtr(const std::pair<float, float>& A, const std::pair<float, float>& B) {
-        float dot = dot_product(A, B);
-        float magA = magnitude(A);
-        float magB = magnitude(B);
-
-        if (magA == 0.0 || magB == 0.0) {
-            // Avoid division by zero
-            return 0.000001f;
-        }
-
-        return dot / (magA * magB) + 0.000001f;
+        return A.first * B.first + A.second * B.second + 0.000001f;
     }
-    
-    void getList(const Request* request, InnerResponse* response){
-        if(printFlag){
-        std::cout << "开始了一次get请求" << std::endl;}
-        // google::protobuf::RepeatedField<float> context_vector = request->context_vector();
+
+    void getListBucketsort(const Request* request, Response* response){
         std::pair<float, float> userVector = std::make_pair(request->context_vector()[0], request->context_vector()[1]);
         uint32_t hour = request->hour();
         uint32_t topn = request->topn();
         
         int keywordLength =  request->keywords().size();
-        // 首先根据hour过滤出可行的字段列表
-        //std::vector<std::unordered_set<uint32_t> > adgroupUseful(keywordLength, std::unordered_set<uint32_t>{});
-        if(printFlag){
-        std::cout << "首先根据hour过滤出可行的字段列表" << std::endl;}
-        std::unordered_map<uint32_t, uint16_t> adgroupmap;
-        std::vector<std::vector<uint16_t>> adgroupPosition;
+        float ctr;
+        uint32_t price;
+        float score;
+        std::vector<std::vector<Adgroup>> adGroupBucket(bucketSize);
         for(const auto & userKeyword : request->keywords()){
-            // std::cout << "userKeyword" << userKeyword << std::endl;
-            // std::cout << "(*keywordIDPtr)[userKeyword]" << (*keywordIDPtr)[userKeyword] << std::endl;
-            for(const auto& pair : (*keywordAdgroupPtr)[(*keywordIDPtr)[userKeyword]]){
-                // std::cout << "pair.first(adgroupID)" << pair.first << std::endl;
-                // std::cout << "pair.second(keywordposition)" << pair.second << std::endl;
-                if(checkHours(pair.first, hour)){
-
-                    if(adgroupmap.find(pair.first) == adgroupmap.end()){
-                        adgroupmap[pair.first] = adgroupmap.size();
-                        adgroupPosition.emplace_back(std::vector<uint16_t>());
+            auto keywordIt = keywordIDPtr->find(userKeyword);
+            if (keywordIt == keywordIDPtr->end()) {
+                continue;
+            }
+            const auto& keywordid = keywordIt->second;
+            int index = 0;
+            for(const auto& adgroup: (*keywordAdgroupidPtr)[keywordid]){
+                if(checkHours(adgroup, hour)){
+                    Adgroup nowAdgroup;
+                    nowAdgroup.ctr = getCtr(userVector, (*keywordAdgroup2vectorPtr)[keywordid][index]);
+                    if(ctr < 0){
+                        continue;
                     }
-                    adgroupPosition[adgroupmap[pair.first]].emplace_back(pair.second);
+                    nowAdgroup.price = (*keywordAdgroup2pricePtr)[keywordid][index];
+                    nowAdgroup.score = nowAdgroup.ctr * nowAdgroup.price;
+                    nowAdgroup.adgroup_id = adgroup;
+                    if(nowAdgroup.score>65535){
+                        continue;
+                    }
+                    adGroupBucket[hashtable[(int)(nowAdgroup.score*100)]].emplace_back(nowAdgroup);
                 }
+                index++;
             }
         }
-        if(printFlag){
-        std::cout << "过滤完毕" << std::endl;}
-        CompareAdgroupMessage cmp;
-        std::priority_queue<AdgroupMessage, std::vector<AdgroupMessage>, CompareAdgroupMessage> adGroupPQ;
-
-        for(const auto& pair : adgroupmap){
-            //adgroupid = pair.first;
-            // adgroupPosition[pair.second] keyword在不同adgroup下的下标
-            if(adgroupPosition[pair.second].size() == keywordLength){
-                AdgroupMessage nowAdgroup;
-                nowAdgroup.set_score(std::numeric_limits<float>::lowest());
-                int index = 0;
-                for(const auto& pos : adgroupPosition[pair.second]){
-                    // auto& userkeyword = request->keywords()[index];
-                    // itemvector = (*adgroupKeyword2vectorPtr)[adgroupid][pos];
-                    float ctr = getCtr(userVector, (*adgroupKeyword2vectorPtr)[pair.first][pos]);
-                    uint16_t price = (*adgroupKeyword2pricePtr)[pair.first][pos];
-                    float score = ctr*price;
-                    if(score > nowAdgroup.score() || (score == nowAdgroup.score() && price < nowAdgroup.price() )){
-                        nowAdgroup.set_adgroup_id((*ID2adgroupPtr)[pair.first]);
-                        nowAdgroup.set_ctr(ctr);
-                        nowAdgroup.set_price(price);
-                        nowAdgroup.set_score(score);
+        
+        std::unordered_set<uint64_t> adgroupset;
+        int index = 0;
+        int i = 0;
+        int j = 0;
+        for(i = bucketSize - 1 ; i >= 0 && index < topn+1; i--){
+            if(adGroupBucket[i].size() == 0){
+                continue;
+            }
+            else if(adGroupBucket[i].size() > 1){
+                std::sort(adGroupBucket[i].begin(), adGroupBucket[i].end());
+            }
+            
+            for(j = 0 ; j < adGroupBucket[i].size() && index < topn+1 ; j++){
+                if(adgroupset.find(adGroupBucket[i][j].adgroup_id) == adgroupset.end()){
+                    if(index != topn){
+                        response->add_adgroup_ids(adGroupBucket[i][j].adgroup_id);
                     }
+                    if(index != 0){
+                        response->add_prices(adGroupBucket[i][j].score/ctr+0.5);
+                    }
+                    ctr = adGroupBucket[i][j].ctr;
+                    price = adGroupBucket[i][j].price;
+                    adgroupset.insert(adGroupBucket[i][j].adgroup_id);
                     index++;
                 }
-                if(adGroupPQ.size() < topn+1){
-                    adGroupPQ.push(nowAdgroup);
-                }
-                else if(cmp(nowAdgroup,adGroupPQ.top())){
-                    adGroupPQ.pop();
-                    adGroupPQ.push(nowAdgroup);
-                }
-
+            }
+            if(index > topn){
+                break;
             }
         }
-        while (!adGroupPQ.empty()) {
-            AdgroupMessage topAdgroup = adGroupPQ.top();
-            adGroupPQ.pop();
-            AdgroupMessage* adgroup = response->add_adgroups();
-            *adgroup = topAdgroup;
+        if(index < topn+1){
+            response->add_prices(price);
+        }
+        
+    }
+
+    void getListQuicksort(const Request* request, Response* response){
+        std::pair<float, float> userVector = std::make_pair(request->context_vector()[0], request->context_vector()[1]);
+        uint32_t hour = request->hour();
+        uint32_t topn = request->topn();
+        
+        int keywordLength =  request->keywords().size();
+        float ctr;
+        uint32_t price;
+        float score;
+        std::vector<Adgroup> adGroupPQ;
+        std::unordered_map<uint64_t,uint32_t> adgroupmap;
+        for(const auto & userKeyword : request->keywords()){
+            auto keywordIt = keywordIDPtr->find(userKeyword);
+            if (keywordIt == keywordIDPtr->end()) {
+                continue;
+            }
+            int index = 0;
+            const auto& keywordid = keywordIt->second;
+            for(const auto& adgroup: (*keywordAdgroupidPtr)[keywordid]){
+                if(checkHours(adgroup, hour)){
+                    Adgroup nowAdgroup;
+                    nowAdgroup.ctr = getCtr(userVector, (*keywordAdgroup2vectorPtr)[keywordid][index]);
+                    nowAdgroup.price = (*keywordAdgroup2pricePtr)[keywordid][index];
+                    nowAdgroup.score = nowAdgroup.ctr * nowAdgroup.price;
+                    nowAdgroup.adgroup_id = adgroup;
+                    if(adgroupmap.find(adgroup) == adgroupmap.end()){
+                        adgroupmap[adgroup] = adGroupPQ.size();
+                        adGroupPQ.emplace_back(nowAdgroup);
+                    }
+                    else{
+                        size_t adgroupIndex = adgroupmap[adgroup];
+                        if (nowAdgroup < adGroupPQ[adgroupIndex]) {
+                            adGroupPQ[adgroupIndex].score = nowAdgroup.score;
+                            adGroupPQ[adgroupIndex].ctr = nowAdgroup.ctr;
+                            adGroupPQ[adgroupIndex].price = nowAdgroup.price;
+                        }
+                    }
+                }
+                index++;
+            }
+        }
+        size_t k = std::min((size_t)topn+1, (size_t)adGroupPQ.size());
+        std::nth_element(adGroupPQ.begin(), adGroupPQ.begin() + k - 1, adGroupPQ.end());
+
+        std::sort(adGroupPQ.begin(), adGroupPQ.begin() + k);
+
+        
+        int index = 0;
+        int i = 0;
+        for(i = 0 ; i < adGroupPQ.size() && index < topn ; i++){
+            response->add_adgroup_ids(adGroupPQ[i].adgroup_id);
+            if(index != 0){
+                response->add_prices(adGroupPQ[i].score/ctr+0.5);
+            }
+            ctr = adGroupPQ[i].ctr;
+            price = adGroupPQ[i].price;
+            index++;
             
         }
+        if(index < topn){
+            response->add_prices(price);
+        }
+        else{
+            response->add_prices(adGroupPQ[i].score/ctr+0.5);
+        }
+
+
         if(printFlag){
         std::cout << "结束了一次get请求" << std::endl;}
-
     }
-    
-    Status Get(ServerContext * context, const Request* request, InnerResponse* response) override {
-        getList(request, response);
+
+    void getListHeapsort(const Request* request, Response* response){
+        std::pair<float, float> userVector = std::make_pair(request->context_vector()[0], request->context_vector()[1]);
+        uint32_t hour = request->hour();
+        uint32_t topn = request->topn();
+        
+        int keywordLength =  request->keywords().size();
+        float ctr;
+        uint32_t price;
+        float score;
+        std::vector<Adgroup> adGroupPQ;
+        std::unordered_map<uint64_t,uint32_t> adgroupmap(30001);
+        for(const auto & userKeyword : request->keywords()){
+            auto keywordIt = keywordIDPtr->find(userKeyword);
+            if (keywordIt == keywordIDPtr->end()) {
+                continue;
+            }
+            const auto& keywordid = keywordIt->second;
+            int index = 0;
+            for(const auto& adgroup: (*keywordAdgroupidPtr)[keywordid]){
+                if(checkHours(adgroup, hour)){
+                    Adgroup nowAdgroup;
+                    nowAdgroup.ctr = getCtr(userVector, (*keywordAdgroup2vectorPtr)[keywordid][index]);
+                    nowAdgroup.price = (*keywordAdgroup2pricePtr)[keywordid][index];
+                    nowAdgroup.score = nowAdgroup.ctr * nowAdgroup.price;
+                    nowAdgroup.adgroup_id = adgroup;
+                    auto adgroupIt =  adgroupmap.find(adgroup);
+                    if(adgroupIt == adgroupmap.end()){
+                        adgroupmap[adgroup] = adGroupPQ.size();
+                        adGroupPQ.emplace_back(nowAdgroup);
+                    }
+                    else{
+                        const auto& adgroupIndex = adgroupIt->second;
+                        if (adGroupPQ[adgroupIndex] < nowAdgroup) {
+                            adGroupPQ[adgroupIndex] = nowAdgroup;
+                        }
+                    }
+                }
+                index++;
+            }
+        }
+        
+
+        // std::unordered_set<uint64_t> adgroupset;
+
+        std::make_heap(adGroupPQ.begin(), adGroupPQ.end());
+        int index = 0;
+        while(!adGroupPQ.empty() && index < topn){
+            // if(adgroupset.find(adGroupPQ[0].adgroup_id) == adgroupset.end()){
+                
+                response->add_adgroup_ids(adGroupPQ[0].adgroup_id);
+                if(index != 0){
+                    response->add_prices(adGroupPQ[0].score/ctr+0.5);
+                }
+                ctr = adGroupPQ[0].ctr;
+                price = adGroupPQ[0].price;
+                // adgroupset.insert(adGroupPQ[0].adgroup_id);
+                index++;
+            // }
+            std::pop_heap(adGroupPQ.begin(), adGroupPQ.end());
+            adGroupPQ.pop_back();
+        }
+        if(index < topn){
+            response->add_prices(price);
+        }
+        else{
+            response->add_prices(adGroupPQ[0].score/ctr+0.5);
+        }
+        
+
+        if(printFlag){
+        std::cout << "结束了一次get请求" << std::endl;}
+    }
+
+    Status InnerSearch(ServerContext* context, const Request* request, Response* response) override {
+        getListHeapsort(request, response);
         return Status::OK;
     }
 
-        // 合并两个优先队列并返回去重后的 topn 个元素的优先队列
-    void mergeAndDistinctAdGroup(InnerResponse& rp1, InnerResponse& rp2, InnerResponse& rp3, int topn, std::vector<AdgroupMessage>& res, int & index) {
-        
-        AdgroupMessage nowAdgroupMessage;
-        nowAdgroupMessage.set_adgroup_id(-1);
-        nowAdgroupMessage.set_score(std::numeric_limits<float>::lowest());
-        int index1 = rp1.adgroups().size()-1, index2 = rp2.adgroups().size()-1, index3 = rp3.adgroups().size()-1;
-        while((index < topn+1)&& (index1 >= 0 || index2 >= 0 || index3 >= 0)){
-            if(index1 >= 0){
-                nowAdgroupMessage = std::min(nowAdgroupMessage, rp1.adgroups()[index1],CompareAdgroupMessage());
-            }
-            if(index2 >= 0){
-                nowAdgroupMessage = std::min(nowAdgroupMessage, rp2.adgroups()[index2],CompareAdgroupMessage());
-            }
-            if(index3 >= 0){
-                nowAdgroupMessage = std::min(nowAdgroupMessage, rp3.adgroups()[index3],CompareAdgroupMessage());
-            }
-            res[index++] = nowAdgroupMessage;
-            if (index1 >= 0 && rp1.adgroups()[index1].adgroup_id() == nowAdgroupMessage.adgroup_id()) {
-                --index1;
-                if(index1 >= 0)
-                {
-                    nowAdgroupMessage = rp1.adgroups()[index1];
-                }
-                else 
-                {
-                    nowAdgroupMessage.set_adgroup_id(-1);
-                    nowAdgroupMessage.set_score(std::numeric_limits<float>::lowest());
-                }
-            }
-            if (index2 >= 0 && rp2.adgroups()[index2].adgroup_id() == nowAdgroupMessage.adgroup_id()) {
-                --index2;
-                if(index2 >= 0)
-                {
-                    nowAdgroupMessage = rp2.adgroups()[index2];
-                }
-                else 
-                {
-                    nowAdgroupMessage.set_adgroup_id(-1);
-                    nowAdgroupMessage.set_score(std::numeric_limits<float>::lowest());
-                }
-            }
-            if (index3 >= 0 && rp3.adgroups()[index3].adgroup_id() == nowAdgroupMessage.adgroup_id()) {
-                --index3;
-                if(index3 >= 0)
-                {
-                    nowAdgroupMessage = rp3.adgroups()[index3];
-                }
-                else 
-                {
-                    nowAdgroupMessage.set_adgroup_id(-1);
-                    nowAdgroupMessage.set_score(std::numeric_limits<float>::lowest());
-                }
-            }
-
-        }
-        // int index1 = 0, index2 = 0, index3 = 0;
-        // while((index < topn+1) &&(index1 < rp1.adgroups().size() || index2 < rp2.adgroups().size() || index3 < rp3.adgroups().size()))
-        // {
-        //     // 比大小
-        //     if(index1 < rp1.adgroups().size())
-        //     {
-        //         nowAdgroupMessage = std::min(nowAdgroupMessage, rp1.adgroups()[index1],CompareAdgroupMessage());
-        //     }
-        //     if(index2 < rp2.adgroups().size())
-        //     {
-        //         nowAdgroupMessage = std::min(nowAdgroupMessage, rp2.adgroups()[index2],CompareAdgroupMessage());
-        //     }
-        //     if(index3 < rp3.adgroups().size())
-        //     {
-        //         nowAdgroupMessage = std::min(nowAdgroupMessage, rp3.adgroups()[index3],CompareAdgroupMessage());
-        //     }
-        //     // 进res
-        //     res[index++] = nowAdgroupMessage;
-        //     // res[index].set_adgroup_id = nowAdgroupMessage.adgroup_id();
-        //     // res[index].set_score = nowAdgroupMessage.score();
-        //     // res[index].set_price = nowAdgroupMessage.price();
-        //     // res[index++].set_ctr = nowAdgroupMessage.ctr();
-            
-        //     // 增序
-        //     if (index1 < rp1.adgroups().size() && rp1.adgroups()[index1].adgroup_id() == nowAdgroupMessage.adgroup_id()) {
-        //         ++index1;
-        //         if(index1 < rp1.adgroups().size())
-        //         {
-        //             nowAdgroupMessage = rp1.adgroups()[index1];
-        //         }
-        //         else 
-        //         {
-        //             nowAdgroupMessage.set_adgroup_id(-1);
-        //             nowAdgroupMessage.set_score(std::numeric_limits<float>::lowest());
-        //         }
-        //     }
-        //     if (index2 < rp2.adgroups().size() && rp2.adgroups()[index2].adgroup_id() == nowAdgroupMessage.adgroup_id()) {
-        //         ++index2;
-        //         if(index2 < rp2.adgroups().size())
-        //         {
-        //             nowAdgroupMessage = rp2.adgroups()[index2];
-        //         }
-        //         else 
-        //         {
-        //             nowAdgroupMessage.set_adgroup_id(-1);
-        //             nowAdgroupMessage.set_score(std::numeric_limits<float>::lowest());
-        //         }
-        //     }
-        //     if (index3 < rp3.adgroups().size() && rp3.adgroups()[index3].adgroup_id() == nowAdgroupMessage.adgroup_id()) {
-        //         ++index3;
-        //         if(index3 < rp3.adgroups().size())
-        //         {
-        //             nowAdgroupMessage = rp3.adgroups()[index3];
-        //         }
-        //         else 
-        //         {
-        //             nowAdgroupMessage.set_adgroup_id(-1);
-        //             nowAdgroupMessage.set_score(std::numeric_limits<float>::lowest());
-        //         }
-        //     }
-        // }
-    }
-    
-
-
     Status Search(ServerContext* context, const Request* request, Response* response) override {
-        uint32_t topn = request->topn();
-        if(printFlag){
-            std::cout << "开始一次查询" << std::endl;
+        int subnode_id = searchid.fetch_add(1)%3;
+        if(subnode_id == 2){
+            InnerSearch(context, request, response);
         }
-
-        InnerResponse rp[3];
-        getList(request, &rp[2]);
-        
-        Status status[2];
-        grpc::ClientContext clientContext[2];
-        for(int i = 0 ; i < 2 ; i++){
-            status[i] = stub_node[i]->Get(&clientContext[i], *request, &rp[i]);
-        }
-
-        // for(int i = 0 ; i < 3 ; i++){
-        //     std::cout << "node-" << i+1 << std::endl;
-        //     for(auto& adgroup : rp[i].adgroups()){
-        //         std::cout << adgroup.adgroup_id() << " " << adgroup.score() << std::endl;
-        //     }
-        // }
-        
-        if(printFlag){
-            std::cout << "读取成功" << std::endl;
+        else{
+            grpc::ClientContext client_context;
+            stub_node[subnode_id]->InnerSearch(&client_context, *request, response);
         }
         
-
-        //mergeresponse(rp, response);
-        std::vector<AdgroupMessage> adGroupVector(topn+1);
-        int index = 0;
-        mergeAndDistinctAdGroup(rp[0], rp[1], rp[2], topn, adGroupVector, index);
-
-        // for(int i = 0 ; i < index ; i++){
-        //     std::cout << "anwser:"<< std::endl;
-        //     for(auto& adgroup : adGroupVector){
-        //         std::cout << adgroup.adgroup_id() << " " << adgroup.score() << std::endl;
-        //     }
-        // }
-        // std::cout << "index" << index << std:: endl;
-        // std::cout << "topn" << topn << std:: endl;
-        for(int i = 0 ; i < index-1 ; i++){
-            response->add_adgroup_ids(adGroupVector[i].adgroup_id());
-            response->add_prices(adGroupVector[i+1].score()/adGroupVector[i].ctr() + 0.5);
-        }
-        if(index <= topn){
-            response->add_adgroup_ids(adGroupVector[index].adgroup_id());
-            response->add_prices(adGroupVector[index].score()/adGroupVector[index].ctr() + 0.5);
-        }
 
         return Status::OK;
     }
 };
 
+
 void RunServer() {
-
+    int adgroupSize = 101;
+    
     // 堆区内存申请
-    keywordIDPtr = std::make_unique<std::unordered_map<uint64_t, uint32_t>>(keywordCount);
-    adgroupIDPtr = std::make_unique<std::unordered_map<uint64_t, uint32_t>>(adgroupCount);
-    ID2adgroupPtr = std::make_unique<std::vector<uint64_t>>(adgroupCount);
-    adgroup2timingPtr = std::make_unique<std::vector<std::bitset<24>>>(adgroupCount);
-    keywordAdgroupPtr = std::make_unique<std::vector<std::vector<std::pair<uint32_t,uint16_t>>>> (keywordCount, std::vector<std::pair<uint32_t,uint16_t>>());
-    adgroupKeyword2vectorPtr = std::make_unique<std::vector<std::vector<std::pair<float,float>>>>(adgroupCount, std::vector<std::pair<float,float>>());
-    adgroupKeyword2pricePtr = std::make_unique<std::vector<std::vector<uint16_t>>>(adgroupCount, std::vector<uint16_t>());
+    // keywordIDPtr = std::make_unique<std::unordered_map<uint64_t, uint32_t>>(keywordCount);
+    // adgroupIDPtr = std::make_unique<std::unordered_map<uint64_t, uint32_t>>(adgroupCount);
+    // ID2adgroupPtr = std::make_unique<std::vector<uint64_t>>(adgroupCount);
+    // adgroup2timingPtr = std::make_unique<std::vector<std::bitset<24>>>(adgroupCount);
+    // keywordAdgroupPtr = std::make_unique<std::vector<std::vector<uint32_t>>> (keywordCount, std::vector<uint32_t>());
+    // adgroupKeyword2vectorPtr = std::make_unique<std::vector<std::vector<std::pair<float,float>>>>(adgroupCount, std::vector<std::pair<float,float>>());
+    // adgroupKeyword2pricePtr = std::make_unique<std::vector<std::vector<uint32_t>>>(adgroupCount, std::vector<uint32_t>());
+    // adgroupKeywordidPtr = std::make_unique<std::vector<std::unordered_map<uint32_t, uint16_t>>>(adgroupCount, std::unordered_map<uint32_t, uint16_t>());
 
+    keywordIDPtr = std::make_unique<std::unordered_map<uint64_t, uint32_t>>(keywordCount);
+    adgroup2timingPtr = std::make_unique<std::unordered_map<uint64_t, std::bitset<24>>>(adgroupCount);
+    keywordAdgroup2pricePtr = std::make_unique<std::vector<std::vector<uint32_t>>>(keywordCount);
+    keywordAdgroup2vectorPtr = std::make_unique<std::vector<std::vector<std::pair<float, float>>>>(keywordCount);
+    keywordAdgroupidPtr = std::make_unique<std::vector<std::vector<uint64_t>>>(keywordCount);
+    
     std::string env_var_str = std::string("0.0.0.0");
     std::string local_ip = getLocalIP();
     std::cout << "local_ip " << local_ip << std::endl;
@@ -772,6 +667,7 @@ void RunServer() {
     std::string external_address = local_ip + std::string(":") + std::to_string(kPort);
     std::string server_address(std::string("0.0.0.0:") + std::to_string(kPort));
     std::string key = std::string("/services/searchservice");
+
 
     SearchServiceImpl service;
     ServerBuilder builder;

@@ -4,7 +4,7 @@ SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
 CPPFLAGS += `pkg-config --cflags protobuf grpc`
 CXXFLAGS += -std=c++17
-CXXFLAGS += -O2 -g
+CXXFLAGS += -O3 -g
 
 LDFLAGS += -L/usr/local/lib \
 		   -letcd-cpp-api\
@@ -12,7 +12,7 @@ LDFLAGS += -L/usr/local/lib \
 		   -lboost_log\
 		   -lssl\
 		   -lcrypto\
-		   -O2 -g\
+		   -O3 -g\
            -pthread\
 		   `pkg-config --libs --static protobuf grpc++`\
            -ldl

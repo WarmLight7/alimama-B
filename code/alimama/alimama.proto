@@ -33,9 +33,10 @@ message Request {
 
 message AdgroupMessage {
   float score = 1;
-  float price = 2;
+  uint32 price = 2;
   float ctr = 3;
   uint64 adgroup_id = 4;
+  
 }
 
 message InnerResponse {
@@ -47,6 +48,7 @@ message Response {
 
   // 广告单元对应的出价(单位为分)
   repeated uint64 prices = 2;
+  
 }
 
 message AvailabilityRequest {
@@ -61,6 +63,7 @@ message AvailabilityResponse {
 }
 service SearchService {
   rpc Search(Request) returns (Response) {}
+  rpc InnerSearch(Request) returns (Response){}
   rpc Get(Request) returns (InnerResponse) {}
   //rpc AsyncGet(Request) returns (InnerResponse) {}
   rpc CheckAvailability(AvailabilityRequest) returns (AvailabilityResponse) {}
