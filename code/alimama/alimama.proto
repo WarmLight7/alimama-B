@@ -31,17 +31,6 @@ message Request {
   uint64 topn = 4;
 }
 
-message AdgroupMessage {
-  float score = 1;
-  uint32 price = 2;
-  float ctr = 3;
-  uint64 adgroup_id = 4;
-  
-}
-
-message InnerResponse {
-  repeated AdgroupMessage adgroups = 1;
-}
 message Response {
   // 广告单元id
   repeated uint64 adgroup_ids = 1;
@@ -63,8 +52,6 @@ message AvailabilityResponse {
 }
 service SearchService {
   rpc Search(Request) returns (Response) {}
-  rpc InnerSearch(Request) returns (Response){}
-  rpc Get(Request) returns (InnerResponse) {}
-  //rpc AsyncGet(Request) returns (InnerResponse) {}
+  rpc InnerSearch(Request) returns (Response) {}
   rpc CheckAvailability(AvailabilityRequest) returns (AvailabilityResponse) {}
 }

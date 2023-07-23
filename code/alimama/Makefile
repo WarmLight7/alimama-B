@@ -1,6 +1,7 @@
 IMAGE = public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B-v0
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
+CPPFLAGS += -I./
 CXX = g++
 CPPFLAGS += `pkg-config --cflags protobuf grpc`
 CXXFLAGS += -std=c++17
@@ -21,7 +22,9 @@ GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
 
 PROTOS_PATH = ./
-HEADER_FILES = $(wildcard *.h)
+
+
+
 
 vpath %.proto $(PROTOS_PATH)
 
