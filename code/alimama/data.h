@@ -9,7 +9,10 @@
 #include <sstream>
 #include <algorithm>
 #include <csv.h>
+#ifndef DATA_H
+#define DATA_H
 
+namespace Data {
 
 class DataProcessor {
 protected:
@@ -170,3 +173,6 @@ public:
 
 
 };
+
+}
+#endif // DATA_H

@@ -1,3 +1,6 @@
+#ifndef SORT_H
+#define SORT_H
+
 #ifdef BAZEL_BUILD
 #include "examples/protos/alimama.grpc.pb.h"
 #else
@@ -8,9 +11,13 @@ using alimama::proto::Response;
 
 #include <data.h>
 #include <unordered_set>
-class SortMethod: public DataProcessor{
+
+namespace Sort {
+
+
+class SortMethod: public Data::DataProcessor{
 public:
-    SortMethod() : SortMethod() {}
+    SortMethod() : DataProcessor() {}
     static float getCtr(const std::pair<float, float>& A, const std::pair<float, float>& B) {
         return A.first * B.first + A.second * B.second + 0.000001f;
     }
@@ -204,5 +211,7 @@ public:
             response->add_prices(adGroupPQ[i].score/ctr+0.5);
         }
     }
-
 };
+
+}
+#endif // SORT_H

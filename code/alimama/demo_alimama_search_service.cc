@@ -55,7 +55,7 @@ std::string getLocalIP() {
 }
 
 
-class SearchServiceImpl final : public SearchService::Service , public SortMethod{
+class SearchServiceImpl final : public SearchService::Service , public Sort::SortMethod{
 private:
     bool isAvailable = false;
     std::unique_ptr<SearchService::Stub> stub_node[2];
@@ -138,7 +138,6 @@ void RunServer() {
     builder.RegisterService(&service);
 
     std::unique_ptr<Server> server(builder.BuildAndStart());
-
     char *hostname = std::getenv("NODE_ID");
     int hostNode = std::stoi(hostname);
     std::cout << "hostNode:" << hostNode << std::endl;
@@ -147,8 +146,6 @@ void RunServer() {
     if(hostNode == 1){
         //创建一个etcd客户端
         service.WaitService();
-        
-        //std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         // 将服务地址注册到etcd中
         auto response = etcd.set(key, external_address).get();
         if (response.is_ok()) {
@@ -156,16 +153,13 @@ void RunServer() {
         } else {
             std::cerr << "Service registration failed: " << response.error_message() << "\n";
         }
-
         std::cout << "Server listening on " << server_address  << std::endl;
         
     }
-
     server->Wait();
 }
 
 int main(int argc, char** argv) {
   RunServer();
-
   return 0;
 }

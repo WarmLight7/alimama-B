@@ -2,6 +2,7 @@ IMAGE = public-images-registry.cn-hangzhou.cr.aliyuncs.com/public/alimama-2023:B
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CPPFLAGS += -I./
+CXXFLAGS += -I./
 CXX = g++
 CPPFLAGS += `pkg-config --cflags protobuf grpc`
 CXXFLAGS += -std=c++17
