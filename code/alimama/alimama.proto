@@ -29,6 +29,7 @@ message Request {
   // 返回的广告单元的数量，若满足后续条件的广告单元数量不足`topn`个，则返回所有满足条件的广告单元
   // 若满足后续条件的广告单元数量超过`topn`个，则返回按分数降序排列的前`topn`个广告单元。
   uint64 topn = 4;
+  uint64 reqid = 5;
 }
 
 message Response {
@@ -37,7 +38,7 @@ message Response {
 
   // 广告单元对应的出价(单位为分)
   repeated uint64 prices = 2;
-  
+  uint64 resid = 3;
 }
 
 message AvailabilityRequest {

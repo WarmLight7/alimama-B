@@ -19,6 +19,11 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::ClientContext;
+using grpc::ServerAsyncResponseWriter;
+using grpc::ServerCompletionQueue;
+using grpc::ClientAsyncResponseReader;
+using grpc::CompletionQueue;
+
 
 using alimama::proto::Request;
 using alimama::proto::Response;
@@ -32,7 +37,6 @@ using alimama::proto::AvailabilityResponse;
 #include <arpa/inet.h>
 
 #include <sort.h>
-
 
 std::string getLocalIP() {
     struct ifaddrs *ifAddrStruct = NULL;
@@ -57,10 +61,28 @@ std::string getLocalIP() {
 
 class SearchServiceImpl final : public SearchService::Service , public Sort::SortMethod{
 private:
-    bool isAvailable = false;
     std::unique_ptr<SearchService::Stub> stub_node[2];
+    bool isAvailable = false;
     int hostNode;
-    std::atomic<uint64_t> searchid{0};
+    //异步GRPC
+    std::mutex asyncmutex[2];
+    std::condition_variable asynccv[2];
+    CompletionQueue cq_[2];//异步GRPC
+    std::unique_ptr<std::vector<Response>> async_grpc_node[2]; // reqid, res
+    std::unique_ptr<bool[]> async_grpc_ready[2]; 
+    std::atomic<uint64_t> reqid{0};
+    //异步GRPC
+    struct AsyncClientCall {
+        // Container for the data we expect from the server.
+        Response reply;
+        // Context for the client. It could be used to convey extra information to
+        // the server and/or tweak certain RPC behaviors.
+        ClientContext context;
+        // Storage for the status of the RPC upon completion.
+        Status status;
+        std::unique_ptr<ClientAsyncResponseReader<Response>> response_reader;
+    };
+
 public:
     SearchServiceImpl(){
         char *hostname = std::getenv("NODE_ID");
@@ -70,28 +92,90 @@ public:
             for (int i = 0; i < 2; i++){
                 std::string distNode = "node-" + std::to_string(i+2) + ":50051";
                 stub_node[i] = SearchService::NewStub(grpc::CreateChannel(distNode, grpc::InsecureChannelCredentials()));
+                
             }
         }
         readCsv("/data/raw_data.csv");
+        //异步GRPC
+        for(int i = 0 ; i < 2 ; i++){
+            async_grpc_node[i] = std::make_unique<std::vector<Response>>(100001); // 十万数量级
+            async_grpc_ready[i] = std::make_unique<bool[]>(100001);
+            for(int j = 0; j < 100001; j++){
+                async_grpc_ready[i][j] = false;
+            }
+            std::thread AsyncRPCthread(&SearchServiceImpl::AsyncCompleteRpc, this, i);
+            AsyncRPCthread.detach();
+        }
         isAvailable = true;
+        
+    }
+
+    //异步GRPC
+    // 异步监听函数
+    void AsyncCompleteRpc(int nodeID) {
+        void* got_tag;
+        bool ok = false;
+        // Block until the next result is available in the completion queue "cq".
+        while (cq_[nodeID].Next(&got_tag, &ok)) {
+            // The tag in this example is the memory location of the call object
+            AsyncClientCall* call = static_cast<AsyncClientCall*>(got_tag);
+
+            // Verify that the request was completed successfully. Note that "ok"
+            // corresponds solely to the request for updates introduced by Finish().
+            GPR_ASSERT(ok);
+
+            if (call->status.ok()){
+                int curindex = call->reply.resid();
+                (*async_grpc_node[nodeID])[curindex] = call->reply;
+                async_grpc_ready[nodeID][curindex] = true;
+                std::unique_lock<std::mutex> lock(asyncmutex[nodeID]);
+                asynccv[nodeID].notify_all();
+                lock.unlock();
+            }
+            else
+                std::cout << "RPC0 failed" << std::endl;
+
+            // Once we're complete, deallocate the call object.
+            delete call;
+        }
     }
 
     Status InnerSearch(ServerContext* context, const Request* request, Response* response) override {
+        //std::cout << "开始了一次Innersearch" <<  request->reqid() << std::endl;
         getListHeapsort(request, response);
+        //std::cout << "结束了一次Innersearch" <<  request->reqid() << std::endl;
+        response->set_resid(request->reqid());//异步GRPC
         return Status::OK;
     }
 
     Status Search(ServerContext* context, const Request* request, Response* response) override {
-        int subnode_id = searchid.fetch_add(1)%3;
-        if(subnode_id == 2){
-            InnerSearch(context, request, response);
-        }
-        else{
-            grpc::ClientContext client_context;
-            stub_node[subnode_id]->InnerSearch(&client_context, *request, response);
+        uint32_t topn = request->topn();
+        Request* mutableRequest = const_cast<Request*>(request);//异步GRPC
+//异步GRPC
+        uint64_t curReqid = reqid.fetch_add(1)%100000;
+        int targetNode = curReqid%3;
+        mutableRequest->set_reqid(curReqid);
+        if(targetNode == 2){
+            InnerSearch(context, mutableRequest, response);
+            return Status::OK;
+        }   
+        AsyncClientCall* call = new AsyncClientCall;
+        call->response_reader = stub_node[targetNode]->PrepareAsyncInnerSearch(&call->context, *mutableRequest, &cq_[targetNode]);
+        call->response_reader->StartCall();
+        call->response_reader->Finish(&call->reply, &call->status, (void*)call);
+        //异步GRPC
+        std::unique_lock<std::mutex> lock(asyncmutex[targetNode]);
+        //std::cout << "开始了一次访问" <<  curReqid  << std::endl;
+        while(async_grpc_ready[targetNode][curReqid] == false){
+            asynccv[targetNode].wait(lock);
         }
         
-
+        *response = (*async_grpc_node[targetNode])[curReqid];
+        //std::cout << "结束了一次访问" <<  response->resid() <<std::endl;
+        Response newResponse;
+        (*async_grpc_node[targetNode])[curReqid] = newResponse;
+        async_grpc_ready[targetNode][curReqid] = false;
+        lock.unlock();
         return Status::OK;
     }
 
@@ -104,7 +188,6 @@ public:
         }
         return Status::OK;
     }
-
     void WaitService() {
         AvailabilityRequest request[2];
         AvailabilityResponse response[2];
@@ -136,7 +219,6 @@ void RunServer() {
     ServerBuilder builder;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
     builder.RegisterService(&service);
-
     std::unique_ptr<Server> server(builder.BuildAndStart());
     char *hostname = std::getenv("NODE_ID");
     int hostNode = std::stoi(hostname);
@@ -160,6 +242,8 @@ void RunServer() {
 }
 
 int main(int argc, char** argv) {
-  RunServer();
-  return 0;
+   RunServer();
+//     SearchServiceImpl server;
+//     server.Run();
+    return 0;
 }

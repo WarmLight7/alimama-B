@@ -1,3 +1,5 @@
+#ifndef DATA_H
+#define DATA_H
 #include <iostream>
 #include <string>
 #include <vector>
@@ -9,18 +11,40 @@
 #include <sstream>
 #include <algorithm>
 #include <csv.h>
-#ifndef DATA_H
-#define DATA_H
+#include <set>
+
 
 namespace Data {
 
 class DataProcessor {
 protected:
+    struct KeywordAdgroup {
+        uint32_t price;
+        std::bitset<24> timing;
+        float vectorx;
+        float vectory;
+        uint64_t adgroup_id;
+        // Overloading the less-than operator ("<")
+        bool operator<(const KeywordAdgroup& other) const {
+            return price > other.price;
+        }
+        KeywordAdgroup& operator=(const KeywordAdgroup& other){
+            if (this == &other) {
+                return *this; // Handling self-assignment
+            }
+
+            // Copying values from 'other' to the current object
+            timing = other.timing;
+            price = other.price;
+            vectorx = other.vectorx;
+            vectory = other.vectory;
+            adgroup_id = other.adgroup_id;
+
+            return *this;
+        }
+    };
     std::unique_ptr<std::unordered_map<uint64_t, uint32_t>> keywordIDPtr;
-    std::unique_ptr<std::unordered_map<uint64_t, std::bitset<24>>> adgroup2timingPtr;
-    std::unique_ptr<std::vector<std::vector<uint32_t>>> keywordAdgroup2pricePtr;
-    std::unique_ptr<std::vector<std::vector<std::pair<float, float>>>> keywordAdgroup2vectorPtr;
-    std::unique_ptr<std::vector<std::vector<uint64_t>>> keywordAdgroupidPtr;
+    std::unique_ptr<std::vector<std::set<KeywordAdgroup>>> keywordAdgroupPtr;
 
     std::shared_mutex keywordIDMutex;
     std::shared_mutex adgroupKeywordMutex;
@@ -34,14 +58,14 @@ protected:
         // Overloading the less-than operator ("<")
         bool operator<(const Adgroup& other) const {
             if (std::abs(score - other.score) > 1e-6) {
-                return score < other.score;
+                return score > other.score;
             }
 
             if (price != other.price) {
-                return price > other.price;
+                return price < other.price;
             }
 
-            return adgroup_id < other.adgroup_id;
+            return adgroup_id > other.adgroup_id;
         }
 
         // Overloading the assignment operator ("=")
@@ -59,6 +83,8 @@ protected:
             return *this;
         }
     };
+
+    
     
 
     
@@ -68,10 +94,7 @@ public:
 
     DataProcessor() {
         keywordIDPtr = std::make_unique<std::unordered_map<uint64_t, uint32_t>>(keywordCount);
-        adgroup2timingPtr = std::make_unique<std::unordered_map<uint64_t, std::bitset<24>>>(adgroupCount);
-        keywordAdgroup2pricePtr = std::make_unique<std::vector<std::vector<uint32_t>>>(keywordCount);
-        keywordAdgroup2vectorPtr = std::make_unique<std::vector<std::vector<std::pair<float, float>>>>(keywordCount);
-        keywordAdgroupidPtr = std::make_unique<std::vector<std::vector<uint64_t>>>(keywordCount);
+        keywordAdgroupPtr = std::make_unique<std::vector<std::set<KeywordAdgroup>>>(keywordCount);
     }
     static void split2float(const std::string& str, std::pair<float, float>& result) {
         std::stringstream ss(str);
@@ -85,23 +108,24 @@ public:
         std::bitset<24> timing(timings);
         return timing;
     }
-    bool checkHours(uint64_t adgroup, int hour){
-        return (*adgroup2timingPtr)[adgroup][23-hour];
-    }
 
-    void read_csv_map_time(const std::string& csvFile, int startRow, int endRow){
-        csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
-        int currentRow = 0;
-        uint64_t keyword,adgroup,price,campaign_id,item_id;
-        uint8_t status;
-        std::string timingString, itemVectorString;
-        std::bitset<24> timing;
-        while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
-            if (adgroup2timingPtr->find(adgroup) == adgroup2timingPtr->end()) {
-                (*adgroup2timingPtr)[adgroup] = timings2bitset(timingString);
-            }
-        }
-    }
+    // bool checkHours(uint64_t adgroup, int hour){
+    //     return (*adgroup2timingPtr)[adgroup][23-hour];
+    // }
+
+    // void read_csv_map_time(const std::string& csvFile, int startRow, int endRow){
+    //     csv::CSVReader<8, csv::trim_chars<>,  csv::no_quote_escape<'\t'> > reader(csvFile);
+    //     int currentRow = 0;
+    //     uint64_t keyword,adgroup,price,campaign_id,item_id;
+    //     uint8_t status;
+    //     std::string timingString, itemVectorString;
+    //     std::bitset<24> timing;
+    //     while (currentRow < endRow && reader.read_row(keyword,adgroup,price,status,timingString,itemVectorString,campaign_id,item_id)){
+    //         if (adgroup2timingPtr->find(adgroup) == adgroup2timingPtr->end()) {
+    //             (*adgroup2timingPtr)[adgroup] = timings2bitset(timingString);
+    //         }
+    //     }
+    // }
 
 
     void read_csv_map_pool(const std::string& csvFile, int startRow, int endRow , int threadNumber, int threadCount) {
@@ -132,20 +156,22 @@ public:
             }
             {
                 std::shared_lock<std::shared_mutex> readLock(adgroupKeywordMutex);
-                if (keywordAdgroup2pricePtr->size() <= keywordid) {
+                if (keywordAdgroupPtr->size() <= keywordid) {
                     readLock.unlock(); 
                     std::unique_lock<std::shared_mutex> writeLock(adgroupKeywordMutex);
-                    while(keywordAdgroup2pricePtr->size() <= keywordid){
-                        (*keywordAdgroup2pricePtr).emplace_back(std::vector<uint32_t>());
-                        (*keywordAdgroup2vectorPtr).emplace_back(std::vector<std::pair<float, float>>()); 
-                        (*keywordAdgroupidPtr).emplace_back(std::vector<uint64_t>());
+                    while(keywordAdgroupPtr->size() <= keywordid){
+                        (*keywordAdgroupPtr).emplace_back(std::set<KeywordAdgroup>());
                     }
                 }
             }
             split2float(itemVectorString, itemVector);
-            (*keywordAdgroupidPtr)[keywordid].emplace_back(adgroup);
-            (*keywordAdgroup2pricePtr)[keywordid].emplace_back(price);
-            (*keywordAdgroup2vectorPtr)[keywordid].emplace_back(itemVector);
+            KeywordAdgroup newKeywordAdgroup;
+            newKeywordAdgroup.adgroup_id = adgroup;
+            newKeywordAdgroup.price = price;
+            newKeywordAdgroup.timing = timings2bitset(timingString);
+            newKeywordAdgroup.vectorx = itemVector.first;
+            newKeywordAdgroup.vectory = itemVector.second;
+            (*keywordAdgroupPtr)[keywordid].insert(newKeywordAdgroup);
             currentRow++;
 
         }
@@ -154,16 +180,16 @@ public:
         int len = 700000000;
         int startRow = 0;  // Starting row
         int endRow = len;
-        int threadCount = 6;
+        int threadCount = 12;
         std::vector<std::thread> threads;
         for (int i = 0; i < threadCount; ++i) {
             threads.emplace_back([this, path, startRow, endRow, i, threadCount]() {
                 read_csv_map_pool(path, startRow, endRow, i, threadCount);
             });
         }
-        threads.emplace_back([this, path, startRow, endRow]() {
-            read_csv_map_time(path, startRow, endRow);
-        });
+        // threads.emplace_back([this, path, startRow, endRow]() {
+        //     read_csv_map_time(path, startRow, endRow);
+        // });
 
         // Wait for all threads to complete
         for (auto& thread : threads) {
